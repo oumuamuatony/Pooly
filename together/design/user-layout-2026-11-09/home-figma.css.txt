@@ -1,0 +1,490 @@
+/* iPad Pro 11" - 6 */
+
+position: relative;
+width: 834px;
+height: 1194px;
+
+background: #FFFFFF;
+transform: rotate(90deg);
+
+
+/* 일정 */
+
+position: absolute;
+width: 65px;
+height: 49px;
+left: 53px;
+top: 63px;
+
+font-family: 'Freesentation';
+font-style: normal;
+font-weight: 700;
+font-size: 42px;
+line-height: 49px;
+/* 상자 높이와 동일 */
+
+color: #000000;
+
+
+
+/* Group 1 */
+
+position: absolute;
+width: 49px;
+height: 180px;
+left: 584px;
+top: 63px;
+
+transform: rotate(90deg);
+
+
+/* Rectangle 1 */
+
+position: absolute;
+width: 180px;
+height: 49px;
+left: 584px;
+top: 63px;
+
+background: #002C5F;
+border-radius: 10px;
+
+
+/* 일정 만들기 */
+
+position: absolute;
+width: 97px;
+height: 28px;
+left: 625px;
+top: 74px;
+
+font-family: 'Freesentation';
+font-style: normal;
+font-weight: 600;
+font-size: 24px;
+line-height: 28px;
+/* 상자 높이와 동일 */
+text-align: center;
+
+color: #FFFFFF;
+
+
+
+/* Rectangle 8 */
+
+box-sizing: border-box;
+
+position: absolute;
+width: 381px;
+height: 834px;
+left: 813px;
+top: 0px;
+
+background: #F6F3F2;
+border-left: 1px solid #C3C3C3;
+
+
+/* 친구 */
+
+position: absolute;
+width: 53px;
+height: 40px;
+left: 843px;
+top: 29px;
+
+font-family: 'Freesentation';
+font-style: normal;
+font-weight: 700;
+font-size: 34px;
+line-height: 40px;
+/* 상자 높이와 동일 */
+
+color: #000000;
+
+
+
+/* 추가 */
+
+position: absolute;
+width: 37px;
+height: 28px;
+left: 1129px;
+top: 35px;
+
+font-family: 'Freesentation';
+font-style: normal;
+font-weight: 600;
+font-size: 24px;
+line-height: 28px;
+/* 상자 높이와 동일 */
+text-align: right;
+
+color: #000000;
+
+
+
+/* Group 4 */
+
+position: absolute;
+width: 61px;
+height: 128px;
+left: 843px;
+top: 104px;
+
+transform: rotate(90deg);
+
+
+/* Ellipse 4 */
+
+box-sizing: border-box;
+
+position: absolute;
+width: 61px;
+height: 61px;
+left: 843px;
+top: 104px;
+
+background: url(ChatGPT 이미지 2026년 11월 9일 오후 03_05_12.png);
+
+
+/* Max */
+
+position: absolute;
+width: 46px;
+height: 28px;
+left: 925px;
+top: 121px;
+
+font-family: 'Freesentation';
+font-style: normal;
+font-weight: 600;
+font-size: 24px;
+line-height: 28px;
+/* 상자 높이와 동일 */
+
+color: #000000;
+
+
+
+/* Group 15 */
+
+position: absolute;
+width: 61px;
+height: 125px;
+left: 843px;
+top: 270px;
+
+transform: rotate(90deg);
+
+
+/* Ellipse 4 */
+
+box-sizing: border-box;
+
+position: absolute;
+width: 61px;
+height: 61px;
+left: 843px;
+top: 270px;
+
+background: url(ChatGPT 이미지 2026년 11월 9일 오후 03_05_06.png);
+
+
+/* Jeff */
+
+position: absolute;
+width: 43px;
+height: 28px;
+left: 925px;
+top: 287px;
+
+font-family: 'Freesentation';
+font-style: normal;
+font-weight: 600;
+font-size: 24px;
+line-height: 28px;
+/* 상자 높이와 동일 */
+
+color: #000000;
+
+
+
+/* Group 14 */
+
+position: absolute;
+width: 61px;
+height: 132px;
+left: 843px;
+top: 187px;
+
+transform: rotate(90deg);
+
+
+/* Ellipse 4 */
+
+box-sizing: border-box;
+
+position: absolute;
+width: 61px;
+height: 61px;
+left: 843px;
+top: 187px;
+
+background: url(ChatGPT 이미지 2026년 11월 9일 오후 03_04_48.png);
+
+
+/* Kelly */
+
+position: absolute;
+width: 50px;
+height: 28px;
+left: 925px;
+top: 204px;
+
+font-family: 'Freesentation';
+font-style: normal;
+font-weight: 600;
+font-size: 24px;
+line-height: 28px;
+/* 상자 높이와 동일 */
+
+color: #000000;
+
+
+
+/* Group 13 */
+
+position: absolute;
+width: 202px;
+height: 711px;
+left: 53px;
+top: 155px;
+
+transform: rotate(90deg);
+
+
+/* Rectangle 13 */
+
+box-sizing: border-box;
+
+position: absolute;
+width: 711px;
+height: 202px;
+left: 53px;
+top: 155px;
+
+background: #FFFFFF;
+border: 1px solid #262626;
+
+
+/* 서울숲 */
+
+position: absolute;
+width: 93px;
+height: 47px;
+left: 78px;
+top: 180px;
+
+font-family: 'Freesentation';
+font-style: normal;
+font-weight: 700;
+font-size: 40px;
+line-height: 47px;
+/* 상자 높이와 동일 */
+
+color: #000000;
+
+
+
+/* Group 12 */
+
+position: absolute;
+width: 64px;
+height: 255px;
+left: 482px;
+top: 168px;
+
+transform: rotate(90deg);
+
+
+/* 2026. 12. 1. */
+
+position: absolute;
+width: 133px;
+height: 30px;
+left: 482px;
+top: 202px;
+
+font-family: 'Freesentation';
+font-style: normal;
+font-weight: 700;
+font-size: 26px;
+line-height: 30px;
+
+color: #000000;
+
+
+
+/* 오후 2:00 */
+
+position: absolute;
+width: 100px;
+height: 30px;
+left: 637px;
+top: 202px;
+
+font-family: 'Freesentation';
+font-style: normal;
+font-weight: 700;
+font-size: 26px;
+line-height: 30px;
+
+color: #000000;
+
+
+
+/* 약속 날짜 및 시간 */
+
+position: absolute;
+width: 140px;
+height: 28px;
+left: 482px;
+top: 168px;
+
+font-family: 'Freesentation';
+font-style: normal;
+font-weight: 400;
+font-size: 24px;
+line-height: 28px;
+/* 상자 높이와 동일 */
+
+color: #4B4B4B;
+
+
+
+/* Group 11 */
+
+position: absolute;
+width: 45px;
+height: 236px;
+left: 78px;
+top: 279px;
+
+transform: rotate(90deg);
+
+
+/* Ellipse 8 */
+
+position: absolute;
+width: 45px;
+height: 45px;
+left: 78px;
+top: 279px;
+
+background: url(ChatGPT 이미지 2026년 11월 9일 오후 03_05_12.png);
+
+
+/* Ellipse 9 */
+
+position: absolute;
+width: 45px;
+height: 45px;
+left: 102px;
+top: 279px;
+
+background: url(ChatGPT 이미지 2026년 11월 9일 오후 03_05_06.png);
+
+
+/* Ellipse 10 */
+
+position: absolute;
+width: 45px;
+height: 45px;
+left: 126px;
+top: 279px;
+
+background: url(ChatGPT 이미지 2026년 11월 9일 오후 03_04_48.png);
+
+
+/* Max님 외 3명 */
+
+position: absolute;
+width: 121px;
+height: 28px;
+left: 193px;
+top: 288px;
+
+font-family: 'Freesentation';
+font-style: normal;
+font-weight: 400;
+font-size: 24px;
+line-height: 28px;
+/* 상자 높이와 동일 */
+
+color: #4B4B4B;
+
+
+
+/* Rectangle 14 */
+
+box-sizing: border-box;
+
+position: absolute;
+width: 153px;
+height: 64px;
+left: 584px;
+top: 270px;
+
+background: #FFFFFF;
+border: 1px solid #4B4B4B;
+
+
+/* Rectangle 15 */
+
+position: absolute;
+width: 153px;
+height: 64px;
+left: 413px;
+top: 270px;
+
+background: #000000;
+
+
+/* 출발하기 */
+
+position: absolute;
+width: 87px;
+height: 33px;
+left: 446px;
+top: 285px;
+
+font-family: 'Freesentation';
+font-style: normal;
+font-weight: 700;
+font-size: 28px;
+line-height: 33px;
+/* 상자 높이와 동일 */
+text-align: center;
+
+color: #FFFFFF;
+
+
+
+/* 여정 확인 */
+
+position: absolute;
+width: 92px;
+height: 33px;
+left: 614px;
+top: 285px;
+
+font-family: 'Freesentation';
+font-style: normal;
+font-weight: 700;
+font-size: 28px;
+line-height: 33px;
+/* 상자 높이와 동일 */
+text-align: center;
+
+color: #000000;
+

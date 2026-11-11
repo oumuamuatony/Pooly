@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="ko">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pooly 데이터베이스</title>
+<style>
+body { margin: 0; background: #f6f3f2; color: #17202b; font: 16px system-ui, sans-serif; }
+main { max-width: 960px; margin: auto; padding: 32px 18px; }
+h1 { color: #002c5f; }
+dl { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; }
+dl div, .table { padding: 16px; background: white; border-radius: 12px; }
+dd { margin: 8px 0 0; font-size: 24px; font-weight: 650; }
+.table { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; white-space: nowrap; }
+td, th { padding: 12px 8px; border-bottom: 1px solid #e6e7e9; text-align: left; }
+</style>
+<main>
+<h1>Pooly 데이터베이스</h1>
+<dl>
+{% for key, label in [('appointments','일정'),('users','사용자'),('contacts','친구'),('seat_profiles','시트 설정')] %}
+<div><dt>{{ label }}</dt><dd>{{ totals[key] }}</dd></div>
+{% endfor %}
+</dl>
+<h2>최근 일정</h2>
+<div class="table">
+<table>
+<thead><tr><th scope="col">목적지</th><th scope="col">약속 시각 (KST)</th><th scope="col">상태</th><th scope="col">일행</th><th scope="col">픽업</th><th scope="col">탑승</th></tr></thead>
+<tbody>
+{% set phases = {'idle':'출발 전','driving':'픽업으로 이동 중','near':'픽업 근처','arrived':'픽업 도착','destination':'목적지로 이동 중','parked':'주차','finished':'완료','cancelled':'취소'} %}
+{% for a in appointments %}
+<tr><td>{{ a.destination }}</td><td>{{ a.meeting_at }}</td><td>{{ phases.get(a.phase, a.phase) }}</td><td>{{ a.riders }}</td><td>{{ a.pickups }}</td><td>{{ a.boarded }}</td></tr>
+{% else %}
+<tr><td colspan="6">아직 일정이 없어요.</td></tr>
+{% endfor %}
+</tbody>
+</table>
+</div>
+</main>
+</html>
