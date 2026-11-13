@@ -1,28 +1,147 @@
-# Pooly
-현대자동차그룹 차량용 앱 개발 공모전 출품작 Pooly(풀리)
+# Pooly (풀리)
 
-## 프로젝트 구성
+> 일행을 태우러 가는 운전자를 위한 Pleos Connect 픽업 앱
+> 현대자동차그룹 차량용 앱 개발 공모전 출품작 · 팀원 홍연일(대표), 권구현
 
-| 구성 | 위치 |
-| --- | --- |
-| Pleos 차량 앱 | [android/PickupTogether](android/PickupTogether/) · Kotlin, Android Studio, Pleos Connect SDK |
-| Flask 서버 | [together/server](together/server/) · 일정, 픽업, 위치 공유, 좌석 선호, SQLite |
-| 차량 UI 및 모바일 웹 | [together/web](together/web/) · `car.html`은 Android 앱에 번들되며 `phone.html`은 Flask에서 제공 |
-| 서버 배포 설정 | [together/deploy](together/deploy/) · PythonAnywhere 및 WSGI |
-| 테스트 | [서버](together/tests/) · [Android](android/PickupTogether/app/src/test/) |
+Pooly는 약속 장소까지 일행을 차례로 태워 가는 **픽업 이동**을 차량 안에서 관리합니다.
+탑승자는 휴대폰 웹에서 픽업 위치를 고르고, 차량은 **좌석 점유 신호**로 승차와 하차를 스스로 확인합니다.
+탑승이 확인되면 그 사람이 저장해 둔 **좌석 설정(열선·통풍·시트 메모리)**을 적용하고, 다음 픽업지로 내비 경로를 갱신합니다.
 
-## 로컬에서 실행
+- 서버: **https://yeonil.pythonanywhere.com** (Flask · PythonAnywhere) — 차량 앱과 휴대폰 웹은 이 서버 하나만 사용합니다.
+- 검증 환경: Pleos Connect 에뮬레이터 2.1.0 (Android API 34, ARM64) · Vehicle SDK 2.3.2
 
-프로젝트 루트에서 Flask 환경을 준비합니다.
+---
 
-```sh
-python3 -m venv together/.venv
-./together/.venv/bin/python -m pip install -r together/requirements.txt
-./together/scripts/start-dev.sh
+## 핵심 기능
+
+| # | 기능 | 동작 | 사용 신호/SDK |
+|---|---|---|---|
+| 1 | **픽업 약속과 위치 공유** | 차량에서 약속(목적지·시간·픽업할 일행 최대 2명)을 만들고 초대 링크를 보냅니다. 일행은 휴대폰 웹에서 참가해 픽업 위치를 고르고, 원하면 이동 중 위치를 공유합니다. | NaviHelper(경로·ETA), FusedLocation, 브이월드 장소 검색, OpenFreeMap |
+| 2 | **픽업 위치 추천** | 탑승자 지도에 정차 빈도 히트맵과 **추천 픽업 위치 1~3번 핀**을 보여 줍니다. 핀을 누르면 바로 픽업 위치로 선택됩니다. | 프로토타입: 가상 정차 데이터 (아래 *실제/가상 데이터 구분* 참고) |
+| 3 | **자동 승차 확인** | 픽업 지점 80m 이내에서 동승석이 *비어 있음 → 점유*로 바뀌면 현재 픽업 대상의 승차로 기록하고 "B 님 승차 완료 · C 님에게 이동 중" 알림을 7초간 내비 위에 띄웁니다. 남은 픽업지와 목적지로 내비 경로를 자동 갱신합니다. | Vehicle: 좌석 점유, 운전석 위치, 기어·속도 / NaviHelper |
+| 4 | **자동 하차 확인** | 승차 때 연결된 좌석이 정차 중 *점유 → 비어 있음*으로 바뀌어 1.5초 이상 유지되면 그 일행의 하차로 기록하고 알림을 띄웁니다. 비워진 좌석은 다음 일행에게 다시 연결될 수 있습니다. | Vehicle: 좌석 점유, 기어·속도 |
+| 5 | **좌석 사용자화** | 승차가 확인된 좌석에만, 탑승 시점의 **실내 온도**로 판단해 저장된 단계를 적용합니다. 20℃ 미만이면 열선, 26℃ 이상이면 통풍, 그 사이에는 둘 다 끕니다. 차량별로 저장한 시트 메모리 슬롯을 불러옵니다. | Vehicle: 실내 온도, 열선/통풍, 좌석 메모리 |
+| 6 | **음성 제어** | Gleo App Action 3개 — 픽업 상태 조회, 남은 픽업지로 안내 시작, 현재 일행에게 도착 알림. 안내 시작과 도착 알림은 차량 화면에서 한 번 더 확인한 뒤 실행합니다. | Gleo, TTS/STT |
+
+탑승자의 좌석 설정은 휴대폰 웹 **내 정보 → 내 좌석 설정**에서 저장합니다. 기본값은 *자동 적용 꺼짐*이며, 다른 일행의 설정은 조회할 수 없습니다.
+
+## 시스템 구성
+
+```mermaid
+flowchart LR
+  subgraph Car[Pleos Connect 차량]
+    UI[car.html<br/>WebView UI] <--> Host[Kotlin 호스트<br/>MainActivity · GuidanceService]
+    Host --> Auto[PickupAutomation<br/>승차·하차 판정]
+    Host --> SDK[Vehicle · NaviHelper · FusedLocation<br/>TTS/STT · Gleo]
+  end
+  Phone[휴대폰 웹<br/>phone.html] -- HTTPS --> Server
+  Host -- HTTPS /api --> Server[(Flask 서버<br/>yeonil.pythonanywhere.com<br/>SQLite)]
 ```
 
-Android Studio에서 `android/PickupTogether`를 열고 Pleos Connect 에뮬레이터에 앱을 실행합니다. Gradle이 `together/web`을 읽으므로 저장소 폴더 구조를 유지합니다. 로컬 빌드와 에뮬레이터 연결은 [차량 앱 실행 가이드](android/PickupTogether/README.md), 호스팅용 패키지는 [PythonAnywhere 배포 가이드](together/deploy/PYTHONANYWHERE.md)를 참고하세요.
+- 차량 UI(`pooly/web/car.html`)는 APK에 번들되고, API 호출은 네이티브 브리지(`PoolyApi`)를 거쳐 서버로 갑니다. 앱은 `BuildConfig.API_BASE_URL` 외의 주소로는 요청하지 않습니다.
+- 내비가 앱을 가려도 `GuidanceService`의 `PickupAutomation`이 0.5초마다 차량 신호를 확인합니다.
+- 서버는 운전자 권한, 현재 픽업 대상, 위치(80m), 신호 시각(15초 이내), 좌석·차량 일치, 중복 관찰 ID를 **다시 검증**한 뒤에만 승차·하차를 기록합니다.
 
-`together/web/car.html`과 `phone.html`은 현재 실행본입니다. 차량 앱 빌드는 저장소의 HTML을 직접 번들합니다. `build_ui.py`는 초기 디자인 템플릿을 재생성할 때 쓰는 개발 도구입니다.
+## 실행 방법
 
-픽업 위치 추천의 GraphSAGE 모델은 기획 단계입니다.
+### 1. 서버
+
+이미 배포되어 있으므로 따로 실행할 필요가 없습니다. 상태 확인: <https://yeonil.pythonanywhere.com/health>
+직접 배포하려면 [PythonAnywhere 배포 가이드](pooly/deploy/PYTHONANYWHERE.md)를 참고하세요.
+
+### 2. 차량 앱 빌드·설치
+
+준비물: Android Studio, Pleos Connect 에뮬레이터 2.1.0(AVD 이름 `Pleos_Connect_2_1`), JDK 17.
+Pleos SDK는 `nexus-playground.pleos.ai` 저장소에서 받습니다([settings.gradle.kts](android/Pooly/settings.gradle.kts)).
+
+```sh
+cd android/Pooly
+./gradlew :app:assembleDebug          # → pooly/artifacts/pooly.apk
+adb install -r ../../pooly/artifacts/pooly.apk
+# 또는 에뮬레이터 실행부터 설치·실행까지 한 번에 (macOS)
+./scripts/run-pleos.sh
+```
+
+Gradle이 `pooly/web`을 앱 assets로 읽으므로 저장소 폴더 구조를 그대로 유지해 주세요.
+패키지 이름은 `io.pooly.app`입니다.
+
+### 3. 시연 순서
+
+1. **약속 만들기 (차량)** — 목적지와 시간을 정하고 픽업할 일행을 추가한 뒤 *초대 보내기*로 링크를 공유합니다.
+2. **참가 (휴대폰)** — 초대 링크(`https://yeonil.pythonanywhere.com/phone.html?invite=…`)를 열어 참가하고, 지도에서 픽업 위치를 고릅니다. 번호 핀(추천 위치)을 눌러도 됩니다. *내 정보 → 내 좌석 설정*에서 자동 적용과 열선·통풍 단계를 저장합니다.
+3. **출발 (차량)** — *출발*을 누르면 Pleos 내비에 픽업지 → 목적지 경로가 설정됩니다.
+4. **차량 신호 조작** — 에뮬레이터의 Virtual Console을 엽니다.
+   ```sh
+   adb forward tcp:8088 tcp:8088     # 브라우저에서 http://127.0.0.1:8088/
+   ```
+   *Emulation Controls → Convenience → Seat Occupancy*에서 동승석(Passenger)을 **Occupied**로 바꾸면 승차 완료 알림과 좌석 설정 적용, 다음 목적지 경로 갱신을 확인할 수 있습니다. 다시 **Empty**로 바꾸면(정차 상태, P단) 하차 완료 알림이 뜹니다.
+   자동 승차는 내비 현재 위치가 픽업 지점 80m 이내일 때만 동작합니다. 에뮬레이터 내비 위치가 픽업 지점에 도달하지 않는 경우에는 *픽업 장소 도착 확인* 등 수동 확인 버튼으로 같은 흐름을 진행할 수 있습니다.
+
+## 자동 승하차 판정 규칙
+
+**승차** (`PickupPolicy.update` → 서버 `auto_board`)
+- 운전자 기기이고, 내비가 이 약속을 안내 중이며, 단계가 이동/근접/도착 중일 것
+- 현재 픽업 대상의 픽업 위치에서 80m 이내 (위치 신호 10초 이내)
+- 운전석이 아닌 좌석 **하나만** 새로 *비어 있음 → 점유* (동시에 두 좌석이 바뀌면 추측하지 않음)
+- 픽업 구간이 시작된 뒤 생긴 변화일 것 (멀리서 이미 앉아 있던 좌석은 제외)
+
+**하차** (`PickupPolicy.alight` → 서버 `auto_alight`)
+- 승차 때 좌석이 연결된 일행만, 같은 차량(앱 설치별 무작위 차량 키)에서
+- 정차(P단, 속도 0.3m/s 이하) 중 그 좌석이 *점유 → 비어 있음*으로 바뀌고 1.5초 이상 유지
+- 승차 시각 이후의 변화일 것, 같은 사람은 한 번만 하차
+
+문 열림이나 수동 '준비 완료'는 판정에 쓰지 않습니다. 수동 확인 버튼(픽업 장소 도착 확인 등)은 신호를 쓸 수 없는 경우를 위한 보조 수단입니다.
+
+## 실제 데이터 / 가상 데이터 구분
+
+| 항목 | 상태 |
+|---|---|
+| 좌석 점유, 기어·속도, 실내 온도, 열선/통풍, 좌석 메모리 | Pleos Vehicle SDK 실제 신호 (에뮬레이터 Virtual Console로 조작) |
+| 경로·ETA·현재 위치 | Pleos NaviHelper / FusedLocation 실제 값 |
+| 약속·초대·승하차 기록·좌석 설정 | 배포 서버 SQLite에 저장되는 실제 데이터 |
+| 픽업 히트맵, 추천 픽업 위치 1~3번 | **가상 데이터 예시**. 성수·건대입구·왕십리 일대의 가상 정차 횟수에 거리 가중치를 둔 점수로 순위를 매깁니다. 화면에도 '예시'로 표시합니다. |
+| 도로 그래프 기반 추천 모델(GNN) | **계획 단계**. 승하차 기록이 쌓이면 도로 구간 단위로 픽업 적합도를 학습해 위 점수를 대체할 예정입니다. |
+
+## 테스트
+
+```sh
+# 서버 (프로젝트 루트, Python 3.11+)
+python3 -m pip install -r pooly/requirements.txt
+python3 -m unittest discover -s pooly/tests -t .
+
+# 차량 앱 판정 로직 단위 테스트
+cd android/Pooly && ./gradlew :app:testDebugUnitTest
+```
+
+계측 테스트(`connectedAndroidTest`)는 사용자 앱을 지우지 않도록 별도 ID(`io.pooly.app.integration`)로 설치됩니다.
+
+## 폴더 구조
+
+```
+android/Pooly/            Pleos 차량 앱 (Kotlin)
+  app/src/main/java/io/pooly/app/
+    MainActivity.kt         WebView 호스트, 네이티브 브리지
+    PoolyApi.kt             서버 통신 (배포 서버 주소만 허용)
+    PickupPolicy.kt         승차·하차·온도 판정 (순수 로직)
+    PickupAutomation.kt     판정 결과를 서버에 기록하고 좌석 설정·경로 갱신
+    GuidanceService.kt      내비 상태 동기화, 백그라운드 자동화
+    PleosVehicle.kt · SeatPersonalizer.kt · PleosNavigation.kt · PleosLocation.kt · PleosVoice.kt
+    GleoActivity.kt · GleoContract.kt   Gleo 음성 명령
+  scripts/run-pleos.sh      에뮬레이터 실행·설치 스크립트
+pooly/
+  server/                   Flask API (domain.py: 약속·픽업·승하차 규칙)
+  web/                      car.html(차량 UI) · phone.html(휴대폰 웹) · pickup-heatmap.js(히트맵·추천)
+  tests/                    서버 테스트
+  deploy/                   PythonAnywhere WSGI·배포 가이드
+  artifacts/gleo-schema.json  Gleo 명령 스키마
+  scripts/                  배포 ZIP 생성, Virtual Console 열기
+docs/oem-map-diagnosis.md   알려진 이슈: 에뮬레이터 내장 내비 배경 지도
+```
+
+## 알려진 제한
+
+- 실차가 아닌 Pleos 에뮬레이터에서만 검증했습니다. 실차의 GPS 근접 판정과 시트 모터 구동 완료는 확인하지 않았습니다.
+- 에뮬레이터 내장 내비의 배경 지도가 비어 보이는 현상은 앱과 무관한 환경 문제입니다 → [docs/oem-map-diagnosis.md](docs/oem-map-diagnosis.md)
+- Gleo 스키마의 공식 검토·활성화와 실제 Gleo 발화 호출은 아직 검증하지 않았습니다.
+- 한 번의 이동에서 픽업할 수 있는 일행은 최대 2명입니다.
+- 자동 하차는 이동이 진행 중인 동안(픽업 구간·목적지 이동·주차)만 기록합니다. 목적지 도착으로 이동이 종료된 뒤 내리는 경우는 기록하지 않습니다.
