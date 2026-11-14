@@ -17,7 +17,7 @@ td, th { padding: 12px 8px; border-bottom: 1px solid #e6e7e9; text-align: left; 
 <main>
 <h1>Pooly 데이터베이스</h1>
 <dl>
-{% for key, label in [('appointments','일정'),('users','사용자'),('contacts','친구'),('seat_profiles','시트 설정')] %}
+{% for key, label in [('appointments','일정'),('users','사용자'),('contacts','친구'),('seat_profiles','시트 설정'),('pickup_stops','정차 기록')] %}
 <div><dt>{{ label }}</dt><dd>{{ totals[key] }}</dd></div>
 {% endfor %}
 </dl>

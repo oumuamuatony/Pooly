@@ -89,15 +89,29 @@
    .map(p=>({...p,score:p.count/(1+p.distance/500)})).sort((a,b)=>b.score-a.score).slice(0,limit)
    .map((p,i)=>({...p,rank:i+1}));
  }
- function addRecommendations(map,center,onPick){
-  (map.__poolyRecommend||[]).forEach(m=>m.remove());
-  map.__poolyRecommend=recommend(center).map(p=>{
-   const button=document.createElement('button');
-   button.type='button';button.className='recommend-pin';button.textContent=String(p.rank);
-   button.setAttribute('aria-label','추천 픽업 위치 '+p.rank+' · '+p.name+' · 예시 데이터');
-   button.onclick=e=>{e.stopPropagation();onPick({id:'recommend-'+p.rank,name:'추천 '+p.rank+' · '+p.name,address:'예시 정차 데이터 기반 추천',lat:p.lat,lon:p.lon});};
-   return new maplibregl.Marker({element:button,anchor:'center'}).setLngLat([p.lon,p.lat]).addTo(map);
-  });
+ // Draws the synthetic example first, then replaces it with recorded boardings when the server has enough.
+ async function addRecommendations(map,center,onPick,loadRecorded){
+  const note=()=>document.querySelector('.recommend-note');
+  const draw=(spots,recorded)=>{
+   (map.__poolyRecommend||[]).forEach(m=>m.remove());
+   map.__poolyRecommend=spots.map(p=>{
+    const label=recorded?'승차 기록 '+p.count+'건 · 평균 정차 '+p.avg_dwell_s+'초':p.name;
+    const button=document.createElement('button');
+    button.type='button';button.className='recommend-pin'+(recorded?' recorded':'');button.textContent=String(p.rank);
+    button.title=label;
+    button.setAttribute('aria-label','추천 픽업 위치 '+p.rank+' · '+label+(recorded?'':' · 예시 데이터'));
+    button.onclick=e=>{e.stopPropagation();onPick({id:'recommend-'+p.rank,name:'추천 '+p.rank+' · '+label,address:recorded?'실제 승차 기록 기반 추천':'예시 정차 데이터 기반 추천',lat:p.lat,lon:p.lon});};
+    return new maplibregl.Marker({element:button,anchor:'center'}).setLngLat([p.lon,p.lat]).addTo(map);
+   });
+   const n=note();
+   if(n)n.innerHTML=recorded?'번호 핀(1~3)은 <b>실제 승차 기록</b>으로 계산한 추천 픽업 위치예요. 기록이 5건 이상 쌓인 곳만 보여요.':'번호 핀(1~3)은 가상 정차 데이터로 계산한 <b>추천 픽업 위치 예시</b>예요. 실제 승차 기록이 쌓이면 바뀌어요.';
+  };
+  draw(recommend(center),false);
+  if(!loadRecorded)return map.__poolyRecommend.length;
+  try{
+   const result=await loadRecorded(center);
+   if(result&&Array.isArray(result.spots)&&result.spots.length&&map.getContainer().isConnected)draw(result.spots,true);
+  }catch(e){}
   return map.__poolyRecommend.length;
  }
  window.PoolyHeatmap={regions,rows,add,completed,addPins,fallback,recommend,addRecommendations};

@@ -153,6 +153,9 @@ def create_app(config=None):
                 db.enable_paired_demo(uid)
             if path == "seat-profile" and request.method in ["GET", "POST"]:
                 return jsonify(db.seat_profile(uid, data if request.method == "POST" else None))
+            if request.method == "GET" and path == "pickup-recommendations":
+                hour = request.args.get("hour")
+                return jsonify(db.pickup_recommendations(float(request.args["lat"]), float(request.args["lon"]), int(hour) if hour not in (None, "") else None))
             if request.method == "GET" and path == "state":
                 return jsonify(db.state(user))
             if request.method == "GET" and path == "places":
@@ -164,7 +167,7 @@ def create_app(config=None):
             match = re.fullmatch(r"invites/([A-Za-z0-9_.-]{1,600})/join", path)
             if request.method == "POST" and match:
                 return jsonify(db.join(user, match[1], data))
-            match = re.fullmatch(r"appointments/([a-f0-9]{24})(?:/(route|actions|member|location|messages|seat-personalization|demo-position))?", path)
+            match = re.fullmatch(r"appointments/([a-f0-9]{24})(?:/(route|actions|member|location|messages|seat-personalization|demo-position|stops))?", path)
             if match:
                 aid, action = match.groups()
                 public_trip = public_demo_owner and db._access(aid, uid)["owner_id"] == public_demo_owner
@@ -180,9 +183,9 @@ def create_app(config=None):
                     return jsonify(route)
                 if request.method == "PATCH" and action is None:
                     return jsonify(db.update(uid, aid, data))
-                handlers = {"actions": db.action, "member": db.member_update, "location": db.location, "messages": db.message, "seat-personalization": db.seat_personalization}
+                handlers = {"actions": db.action, "member": db.member_update, "location": db.location, "messages": db.message, "seat-personalization": db.seat_personalization, "stops": db.record_stop}
                 if request.method == "POST" and action in handlers:
-                    if public_trip and action in {"location", "seat-personalization"}:
+                    if public_trip and action in {"location", "seat-personalization", "stops"}:
                         raise ApiError(403, "공개 시연에서는 사용할 수 없어요.")
                     if public_trip and action == "member" and "share" in data:
                         data["share"] = False

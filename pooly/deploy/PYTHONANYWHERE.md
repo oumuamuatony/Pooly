@@ -38,6 +38,8 @@ os.environ["POOLY_DATABASE_PATH"] = project_root + "/pooly/data/pooly-flask.sqli
 from pooly.server.wsgi import application        # 이전: from together.server.wsgi import application
 ```
 
+`pickup_stops` 테이블은 서버가 시작할 때 자동으로 만들어지므로 따로 마이그레이션할 필요가 없습니다.
+
 `/health`의 `service`가 `pooly`, `version`이 `1.0.0`이면 완료입니다. 확인 후 남은 `together/` 폴더는 지워도 됩니다.
 차량 앱은 패키지 이름이 `io.pooly.app`으로 바뀌었으므로 새 APK를 설치하고 다시 로그인(기기 프로필 생성)해야 합니다.
 
@@ -75,6 +77,8 @@ from pooly.server.wsgi import application        # 이전: from together.server.
 | `POST /api/appointments/<id>/location` | 동의한 이동의 위치 갱신 |
 | `POST /api/appointments/<id>/messages` | 일행 메시지 |
 | `GET /api/places?q=...` | 장소 검색 프록시 |
+| `POST /api/appointments/<id>/stops` | 운전자 차량의 정차 기록(약 50m 칸 위치·정차 시간·시간대·승차/하차) 저장. 10분 초과 정차는 거부 |
+| `GET /api/pickup-recommendations?lat=&lon=&hour=` | 반경 1.5km 안에서 승차 기록 5건 이상인 칸 중 상위 3곳 |
 
 `auto_board`·`auto_alight`는 운전자 권한, 현재 대상, 신호 시각(15초 이내), 좌석·차량 키 일치, 관찰 ID 중복을 서버에서 다시 검증합니다. 같은 관찰 ID를 다시 보내면 상태를 바꾸지 않고 현재 상태를 돌려줍니다.
 

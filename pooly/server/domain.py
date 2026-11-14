@@ -108,6 +108,8 @@ class Store:
             CREATE TABLE IF NOT EXISTS notifications(id INTEGER PRIMARY KEY AUTOINCREMENT,user_id TEXT NOT NULL,appointment_id TEXT,title TEXT,body TEXT,created_at TEXT);
             CREATE TABLE IF NOT EXISTS metadata(key TEXT PRIMARY KEY,value TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS seat_profiles(user_id TEXT PRIMARY KEY,document TEXT NOT NULL);
+            CREATE TABLE IF NOT EXISTS pickup_stops(id INTEGER PRIMARY KEY AUTOINCREMENT,lat REAL NOT NULL,lon REAL NOT NULL,dwell_s INTEGER NOT NULL,hour INTEGER NOT NULL,kind TEXT NOT NULL);
+            CREATE INDEX IF NOT EXISTS pickup_stops_cell ON pickup_stops(lat,lon);
         """)
         secret = self.db.execute("SELECT value FROM metadata WHERE key='secret'").fetchone()
         self.secret = secret[0] if secret else secrets.token_hex(32)
@@ -227,6 +229,58 @@ class Store:
             raise ApiError(409, "새로운 좌석 이탈 신호를 확인해 주세요.")
         return {"seat": binding["seat"], "observation_id": text(data.get("observation_id"), 200, True),
                 "vacated_at": vacated, "observed_at": observed, "method": "seat_vacated"}
+
+    # Stop records for pickup recommendations. Only a coarse cell (~50 m), the stop length, the hour
+    # and boarding/alighting are kept: no user, vehicle, appointment or exact time is stored.
+    STOP_GRID = 0.0005
+    STOP_MAX_S = 600
+    STOP_MIN_RECORDS = 5
+
+    def record_stop(self, uid, aid, data):
+        with self.lock, self.db:
+            a = self._access(aid, uid)
+            driver = self._driver(a)
+            if not driver or driver.get("user_id") != uid:
+                raise ApiError(403, "운전자 차량만 정차 기록을 보낼 수 있어요.")
+            if a["trip"]["phase"] in ["idle", "cancelled", "finished"]:
+                raise ApiError(409, "이동 중에만 정차 기록을 보낼 수 있어요.")
+            lat, lon, dwell, hour, kind = data.get("lat"), data.get("lon"), data.get("dwell_s"), data.get("hour"), data.get("kind")
+            if any(type(v) not in [int, float] or not math.isfinite(v) for v in (lat, lon)) or not (-90 <= lat <= 90 and -180 <= lon <= 180):
+                raise ApiError(400, "정차 위치를 확인해 주세요.")
+            if type(dwell) is not int or not 1 <= dwell <= self.STOP_MAX_S:
+                raise ApiError(400, "10분 이내의 정차만 기록해요.")
+            if type(hour) is not int or not 0 <= hour <= 23 or kind not in ["board", "alight"]:
+                raise ApiError(400, "정차 기록을 확인해 주세요.")
+            cell = lambda v: round(round(v / self.STOP_GRID) * self.STOP_GRID, 6)
+            self.db.execute("INSERT INTO pickup_stops(lat,lon,dwell_s,hour,kind) VALUES(?,?,?,?,?)", (cell(lat), cell(lon), dwell, hour, kind))
+            return {"ok": True}
+
+    def pickup_recommendations(self, lat, lon, hour=None, radius=1500, limit=3):
+        """Ranks ~50 m cells near a place by recorded boardings: frequent, short stops close by rank first."""
+        if not (math.isfinite(lat) and math.isfinite(lon) and -90 <= lat <= 90 and -180 <= lon <= 180):
+            raise ApiError(400, "위치를 확인해 주세요.")
+        if hour is not None and not 0 <= hour <= 23:
+            raise ApiError(400, "시간대를 확인해 주세요.")
+        dlat = radius / 111000
+        dlon = radius / (111000 * max(0.2, math.cos(math.radians(lat))))
+        with self.lock:
+            rows = self.db.execute("""SELECT lat,lon,COUNT(*) n,AVG(dwell_s) dwell,GROUP_CONCAT(hour) hours FROM pickup_stops
+                WHERE kind='board' AND lat BETWEEN ? AND ? AND lon BETWEEN ? AND ? GROUP BY lat,lon HAVING n >= ?""",
+                (lat-dlat, lat+dlat, lon-dlon, lon+dlon, self.STOP_MIN_RECORDS)).fetchall()
+        spots = []
+        for r in rows:
+            meters = distance({"lat": lat, "lon": lon}, {"lat": r["lat"], "lon": r["lon"]})
+            if meters > radius:
+                continue
+            hours = [int(h) for h in r["hours"].split(",")]
+            near = sum(1 for h in hours if hour is not None and min(abs(h-hour), 24-abs(h-hour)) <= 1)
+            score = r["n"] * (1 + (near / r["n"] if hour is not None else 0)) / (1 + r["dwell"] / 120) / (1 + meters / 500)
+            spots.append({"lat": r["lat"], "lon": r["lon"], "count": r["n"], "hour_count": near,
+                          "avg_dwell_s": round(r["dwell"]), "distance_m": round(meters), "score": round(score, 4)})
+        spots.sort(key=lambda s: -s["score"])
+        for i, spot in enumerate(spots[:limit]):
+            spot["rank"] = i + 1
+        return {"spots": spots[:limit], "min_records": self.STOP_MIN_RECORDS, "source": "recorded"}
 
     def register(self, data):
         name = text(data.get("name"), 40, True)
@@ -929,7 +983,7 @@ class Store:
         return v
 
     def database_overview(self):
-        tables = ("appointments", "users", "contacts", "seat_profiles")
+        tables = ("appointments", "users", "contacts", "seat_profiles", "pickup_stops")
         totals = {table: self.db.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0] for table in tables}
         rows = self.db.execute("SELECT document FROM appointments ORDER BY json_extract(document, '$.updated_at') DESC LIMIT 50")
         appointments = []

@@ -24,6 +24,7 @@ class PickupAutomation(private val base: String, private val token: String, priv
     private var profileSeat = ""
     private val handled = mutableSetOf<String>()
     private val alightFailures = mutableMapOf<String, Int>()
+    private val stopRecorder = StopRecorder()
     fun start() {
         PleosRuntime.publish(JSONObject().put("pickupAutomation",true))
         worker.scheduleWithFixedDelay({ if (!closed) try { tick() } catch (error: Exception) {
@@ -51,6 +52,11 @@ class PickupAutomation(private val base: String, private val token: String, priv
         }
         val a = appointment ?: return
         if (!a.optBoolean("is_driver") || a.getJSONObject("trip").optString("phase") in setOf("idle","finished","cancelled")) { policy.reset(); return }
+        // Stop records feed pickup recommendations; they run before any early return below.
+        stopRecorder.update(telemetry(),System.currentTimeMillis()).forEach { stop ->
+            // Best-effort: a failed upload never blocks pickup automation.
+            try { request("/api/appointments/$aid/stops","POST",stop.json()) } catch (_: Exception) {}
+        }
         // Recover a committed receipt after a lost HTTP response or Activity/process recreation.
         val members = a.getJSONArray("members")
         val boundKey = PleosRuntime.vehicle?.vehicleKey
