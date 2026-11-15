@@ -22,6 +22,7 @@ class PickupAutomation(private val base: String, private val token: String, priv
     private var routeAttempts = 0
     private var profileRequestedAt = 0L
     private var profileSeat = ""
+    companion object { private val personalized = java.util.Collections.synchronizedSet(mutableSetOf<String>()) }
     private val handled = mutableSetOf<String>()
     private val alightFailures = mutableMapOf<String, Int>()
     private val stopRecorder = StopRecorder()
@@ -107,10 +108,12 @@ class PickupAutomation(private val base: String, private val token: String, priv
     }
     private fun complete(result: JSONObject, m: JSONObject, match: PickupPolicy.Match, receipt: String) {
         handled.add(receipt)
-        profileRequestedAt = System.currentTimeMillis(); profileSeat = match.seat
+        // Settings are applied once per boarding, even if this automation is recreated and replays the receipt.
+        val firstApply = personalized.add(receipt)
+        if (firstApply) { profileRequestedAt = System.currentTimeMillis(); profileSeat = match.seat }
         val vehicle = PleosRuntime.vehicle ?: return
         // Receipt may be replayed after a lost response; only this server-confirmed passenger gets the settings.
-        try {
+        if (firstApply) try {
             val data = request("/api/appointments/$aid/seat-personalization","POST",JSONObject().put("member_id",match.memberId))
             val binding = data.getJSONObject("binding")
             if (binding.optString("observation_id") == receipt && binding.optString("seat") == match.seat && binding.optString("vehicle_key") == vehicle.vehicleKey) ui.post {

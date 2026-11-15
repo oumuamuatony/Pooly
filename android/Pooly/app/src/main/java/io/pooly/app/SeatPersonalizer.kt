@@ -111,6 +111,8 @@ class SeatPersonalizer(private val sdk: Vehicle, private val vehicleKey: String,
                 sdk.getHVAC().getHvacTemperatureCurrent(readArea, TemperatureUnit.CELSIUS, onComplete = { value -> ui.post {
                     val levels = PickupPolicy.thermal(profile, value?.toDouble())
                     if (levels == null || !allowed()) report("thermal","temperature-unavailable-or-moved")
+                    // Between 20 and 26 C Pooly leaves the seat as it is instead of switching heat or ventilation off.
+                    else if (levels.first == 0 && levels.second == 0) report("thermal","unchanged")
                     else applyThermal(area, levels.first, levels.second, ::allowed, ::report)
                 } }, onFailed = { report("thermal","temperature-unavailable") })
             }, onFailed = { report("thermal","temperature-unavailable") })
