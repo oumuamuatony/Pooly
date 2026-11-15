@@ -117,8 +117,13 @@ class FlaskWorkflowTests(unittest.TestCase):
         driver_state = vehicle.get("/api/state", base_url=origin, headers=self.auth).get_json()
         synced = next(a for a in driver_state["appointments"] if a["id"] == created["id"])
         self.assertEqual(PLACES[2]["name"], synced["members"][0]["pickup"]["name"])
-        for action in ["location", "seat-personalization"]:
+        for action in ["location", "stops"]:
             self.assertEqual(403, vehicle.post(path + "/" + action, base_url=origin, headers=self.auth, json={}).status_code)
+        # Seat settings of demo personas work in the public demo; boarding is still required.
+        for action in ["seat-personalization", "seat-learning"]:
+            response = vehicle.post(path + "/" + action, base_url=origin, headers=self.auth, json={"member_id": friend["id"]})
+            self.assertIn(response.status_code, (403, 409))
+            self.assertNotEqual("공개 시연에서는 사용할 수 없어요.", response.get_json()["error"])
         departed = vehicle.post(path + "/actions", base_url=origin, headers=self.auth, json={"action": "depart"}).get_json()
         self.assertIn(friend["id"], departed["trip"]["planned"]["pickup_arrivals"])
         now = int(time.time() * 1000)

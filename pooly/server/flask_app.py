@@ -187,7 +187,8 @@ def create_app(config=None):
                     return jsonify(db.update(uid, aid, data))
                 handlers = {"actions": db.action, "member": db.member_update, "location": db.location, "messages": db.message, "seat-personalization": db.seat_personalization, "seat-learning": db.seat_learning, "stops": db.record_stop}
                 if request.method == "POST" and action in handlers:
-                    if public_trip and action in {"location", "seat-personalization", "seat-learning", "stops"}:
+                    # Seat settings stay on: public demo riders are shared demo personas, and the server still requires a seat-confirmed boarding.
+                    if public_trip and action in {"location", "stops"}:
                         raise ApiError(403, "공개 시연에서는 사용할 수 없어요.")
                     if public_trip and action == "member" and "share" in data:
                         data["share"] = False
