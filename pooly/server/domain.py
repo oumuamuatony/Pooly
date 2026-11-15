@@ -319,7 +319,8 @@ class Store:
                 continue
             hours = [int(h) for h in r["hours"].split(",")]
             near = sum(1 for h in hours if hour is not None and min(abs(h-hour), 24-abs(h-hour)) <= 1)
-            score = r["n"] * (1 + (near / r["n"] if hour is not None else 0)) / (1 + r["dwell"] / 120) / (1 + meters / 500)
+            # 오래 정차해도 괜찮았던 곳(단속·뒤차 부담이 적은 곳)일수록 높게, 5분부터는 같은 가중치
+            score = r["n"] * (1 + (near / r["n"] if hour is not None else 0)) * (1 + min(r["dwell"], 300) / 300) / (1 + meters / 500)
             spots.append({"lat": r["lat"], "lon": r["lon"], "count": r["n"], "hour_count": near,
                           "avg_dwell_s": round(r["dwell"]), "distance_m": round(meters), "score": round(score, 4)})
         spots.sort(key=lambda s: -s["score"])

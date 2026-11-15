@@ -47,14 +47,14 @@ class PickupStopTests(unittest.TestCase):
             self.stop(lat=37.546, kind='alight')
         self.assertEqual(1, len(self.recommend().get_json()['spots']))
 
-    def test_frequent_short_nearby_stops_rank_first(self):
+    def test_frequent_long_nearby_stops_rank_first(self):
         self.start()
         for _ in range(6):
-            self.stop(lat=37.5450, lon=127.0560, dwell=30)    # close, short
+            self.stop(lat=37.5450, lon=127.0560, dwell=30)    # close, short stop
             self.stop(lat=37.5480, lon=127.0560, dwell=30)    # farther away
-            self.stop(lat=37.5440, lon=127.0570, dwell=500)   # close but blocks the road long
+            self.stop(lat=37.5440, lon=127.0570, dwell=500)   # close and safe to wait long
             self.stop(lat=37.5900, lon=127.0560, dwell=20)    # outside 1.5 km
         spots = self.recommend('lat=37.5450&lon=127.0560').get_json()['spots']
-        self.assertEqual([(37.545, 127.056), (37.548, 127.056), (37.544, 127.057)], [(s['lat'], s['lon']) for s in spots])
+        self.assertEqual([(37.544, 127.057), (37.545, 127.056), (37.548, 127.056)], [(s['lat'], s['lon']) for s in spots])
         self.assertEqual(400, self.recommend('lat=abc&lon=127').status_code)
         self.assertEqual(400, self.recommend('lat=37.5&lon=127&hour=25').status_code)
