@@ -81,7 +81,7 @@
    this._boardingTimer=setInterval(function(){self.checkBoarding();},500);
    this._vehicleNotices={};this._onNative=function(e){self.vehicleNotice(e.detail||{});};window.addEventListener('pooly:native',this._onNative);
    this._off=T.on(function(){self.applyServer();});
-   this._back=function(){var s=self.state;if(T.app.nativeStatus.navigationPanel==='pickup'){T.native('closeNavigationPanel',{returnToApp:true}).catch(function(e){self.setState({actionError:e.message});});return;}if(s.destinationSearchOpen){self.setState({nativeDestinationPending:null,destinationSearchOpen:false});T.native('cancelDestinationSelection').catch(function(){});}else if(s.meetingPickerOpen)self.setState({meetingPickerOpen:false});else if(s.sheet)self.setState({sheet:null});else if(s.screen==='search'&&s.form){self.cancelDestinationPreview();self.go('create');}else if(T.app.nativeStatus.navigationPanel){self._draftSerial=(self._draftSerial||0)+1;self.setState({screen:'home',form:null});T.native('closeNavigationPanel',{returnToApp:T.app.nativeStatus.navigationPanel==='create'}).catch(function(e){self.toast(e.message);});}else self.setState({screen:'home',form:null});};window.addEventListener('pooly:back',this._back);
+   this._back=function(){var s=self.state;if(s.destinationSearchOpen){self.setState({nativeDestinationPending:null,destinationSearchOpen:false});T.native('cancelDestinationSelection').catch(function(){});}else if(s.meetingPickerOpen)self.setState({meetingPickerOpen:false});else if(s.sheet)self.setState({sheet:null});else if(s.screen==='search'&&s.form){self.cancelDestinationPreview();self.go('create');}else if(T.app.nativeStatus.navigationPanel){self._draftSerial=(self._draftSerial||0)+1;self.setState({screen:'home',form:null});T.native('closeNavigationPanel',{returnToApp:T.app.nativeStatus.navigationPanel==='create'}).catch(function(e){self.toast(e.message);});}else self.setState({screen:'home',form:null});};window.addEventListener('pooly:back',this._back);
    T.init().then(function(){self.applyServer();}).catch(function(e){T.app.offline=true;T.app.loading=false;self.toast('서버에 연결하지 못했어요. 기기·권한에서 다시 연결해 주세요.');self.setState({serverTick:Date.now()});});
   };
   var oldUnmount=Component.prototype.componentWillUnmount;
@@ -89,6 +89,11 @@
   // Native seat automation announces boarding/drop-off over the OEM navigation for 7 seconds.
   Component.prototype.vehicleNotice=function(d){
    var self=this;
+   if(Object.prototype.hasOwnProperty.call(d,'navigationPanel')){
+    var wasOpen=self._noticePanelOpen;
+    self._noticePanelOpen=d.navigationPanel==='moving';
+    if(wasOpen&&!self._noticePanelOpen)self.setState({guidanceNotice:null});
+   }
    ['pickupBoardingNotice','pickupAlightNotice'].forEach(function(key){
     var n=d[key];
     if(!n||!n.key||self._vehicleNotices[n.key]||!T.app.appointments.some(function(a){return a.id===n.appointmentId;}))return;
@@ -96,10 +101,10 @@
     self._vehicleNotices[n.key]=true;
     if(T.app.selected!==n.appointmentId)T.select(n.appointmentId);
     var notice={title:n.title,message:n.message};
-    self.setState({screen:'moving',sheet:null,guidanceNotice:notice});
+    self.setState({screen:'moving',sheet:null,guidanceNotice:notice},function(){
+     if(self.state.guidanceNotice===notice)panel('moving',self);
+    });
     if(T.refresh)T.refresh();
-    panel('moving',self);
-    setTimeout(function(){if(self.state.guidanceNotice===notice)self.setState({guidanceNotice:null});},7000);
    });
   };
   Component.prototype.componentWillUnmount=function(){if(this._off)this._off();if(this._onNative)window.removeEventListener('pooly:native',this._onNative);clearInterval(this._boardingTimer);window.removeEventListener('pooly:back',this._back);if(oldUnmount)oldUnmount.call(this);};
@@ -150,7 +155,7 @@
     if(s.sheet==='friend'&&!FR[s.ctx])patch.sheet=null;
     if(a.trip.phase==='cancelled'&&!['home','history'].includes(s.screen))patch.screen='home';
     else if(a.trip.phase==='finished'&&['moving','detail'].includes(s.screen))patch.screen='record';
-    else if(guidancePaused(a)&&s.screen==='moving'&&!s.form)patch.screen='detail';
+    else if(guidancePaused(a)&&s.screen==='moving'&&!s.form&&!s.guidanceNotice)patch.screen='detail';
    }else{patch.trip=defaultTrip();patch.mv={idx:0,phase:'drive',traffic:false,done:[],finished:false,on:false};if(!s.form&&!['home','create','search','history'].includes(s.screen))patch.screen='home';}
    if(T.app.nativeStatus.navigationPanel==='moving'&&(!a||['finished','cancelled'].includes(a.trip.phase)))T.native('closeNavigationPanel',{returnToApp:false}).catch(function(){});
    this.setState(patch);
@@ -177,7 +182,6 @@
   Component.prototype.submitForm=async function(){
    var f=this.state.form,serial=this._draftSerial||0;if(!f||this._savingDraft===serial)return;this._savingDraft=serial;this.setState({formSaving:true,formError:''});
    try{
-    if(f.pickups.length>2)return;
     if(!f.destination_place)throw new Error('목적지를 선택해 주세요.');
     if(!f.origin_place){var origin=await T.locate();if(!this.state.form||(this._draftSerial||0)!==serial)return;f=copy(this.state.form);f.origin_place=origin;f.start='현재 위치';this.setState({form:f});}
     var data={name:f.name,origin:f.origin_place,destination:f.destination_place,meeting_at:f.meeting_at||new Date(f.date+'T'+hm(f.time)+':00+09:00').toISOString(),mode:f.mode,pickup_order:f.pickups.slice(),members:f.members.map(function(id){return{id:id,mode:f.pickups.includes(id)?'pickup':'walk'};})};
@@ -197,7 +201,7 @@
     else{await T.member({action:'depart'});this.toast('출발을 일행에게 알렸어요.');}
    }catch(e){this.setState({screen:'detail',actionError:e.message});}
   };
-  Component.prototype.board=async function(){try{await T.action('board');this.toast('탑승을 확인했어요. 다음 경로로 이동해요.');}catch(e){this.toast(e.message);}};
+  Component.prototype.board=async function(){try{await T.action('board');if(T.app.native&&T.app.nativeStatus.automotive)await T.navigate();}catch(e){this.toast(e.message);}};
   Component.prototype.notify=async function(){try{await T.action('notify');this.toast('일행에게 도착 알림을 보냈어요.');}catch(e){this.toast(e.message);}};
   Component.prototype.demoNext=async function(){try{var a=T.active();if(a&&['driving','near'].includes(a.trip.phase))await T.action('arrive');}catch(e){this.toast(e.message);}};
   Component.prototype.openDestinationSearch=function(){
@@ -262,7 +266,22 @@
    h.tMinus=function(){draftPatch(function(f){var d=new Date(f.meeting_at);d.setMinutes(d.getMinutes()-10);f.meeting_at=d.toISOString();f.time=mins(d);});};
    h.tPlus=function(){draftPatch(function(f){var d=new Date(f.meeting_at);d.setMinutes(d.getMinutes()+10);f.meeting_at=d.toISOString();f.time=mins(d);});};
    h.submit=function(){self.submitForm();};
-   h.confirmChange=wrap(async function(){var c=s.ctx;if(c.type==='cancelTrip'){await T.action('cancel');self.setState({screen:'home',sheet:null});self.toast('약속을 취소했어요.');}else if(c.type==='pickup'){var members=a.members.map(function(m){return{id:m.id,mode:m.id===c.id?'walk':m.mode};});if(a.trip.phase==='idle')await T.patch({members:members});else await T.action('skip');self.setState({sheet:null});}});
+   h.confirmChange=wrap(async function(){
+    var c=s.ctx;
+    if(c.type==='deleteAppointment'){
+     await T.deleteAppointment(c.id);
+     self.setState({screen:c.back,sheet:null,ctx:null,histSel:null});
+    }else if(c.type==='pickup'){
+     var members=a.members.map(function(m){return{id:m.id,mode:m.id===c.id?'walk':m.mode};});
+     if(a.trip.phase==='idle')await T.patch({members:members});else await T.action('skip');
+     self.setState({sheet:null});
+    }
+   });
+   v.canDeleteAppointment=!!a&&a.is_owner&&!core.nativeStatus.restricted;
+   h.deleteAppointment=function(){
+    if(!v.canDeleteAppointment)return;
+    self.setState({sheet:'change',ctx:{type:'deleteAppointment',id:a.id,back:s.screen==='record'?'history':'home',title:'일정을 삭제할까요?',items:[a.destination.name,'일행의 일정에서도 삭제돼요'],who:[],ok:'삭제',danger:true}});
+   };
    h.searchRemote=wrap(async function(){var query=self.state.search.q;self.setState({search:Object.assign({},self.state.search,{st:'loading'})});var r=await T.search(query);r.results.forEach(function(p){var row={id:p.id,name:p.name,addr:p.address,pt:geo(p),lat:p.lat,lon:p.lon,tag:'검색 결과',land:p.address,walk:0};[RES,RESP].forEach(function(list){var i=list.findIndex(function(x){return x.id===p.id;});if(i>=0)list[i]=row;else list.push(row);});});self.setState({search:Object.assign({},self.state.search,{st:r.results.length?'results':'empty'})});if(!r.results.length)self.toast('지도에서 원하는 장소를 누를 수도 있어요.');});
    h.useCur=h.grant=wrap(async function(){var p=await T.locate();self.selectMapPlace(p);});
    h.addSelectedFriends=wrap(async function(){var ids=self.state.addSel.filter(function(id){return core.contacts.some(function(c){return c.id===id;});});if(!ids.length)return;if(self.state.form&&self.state.screen==='create'){draftPatch(function(f){ids.forEach(function(id){if(!f.members.includes(id)){f.members.push(id);f.status[id]='pending';}});});self.setState({sheet:null,addSel:[]});self.toast('일행을 추가했어요.');}else{if(!a)throw new Error('일정을 먼저 만들어 주세요.');var members=a.members.map(function(m){return{id:m.id,mode:m.mode};});ids.forEach(function(id){if(!members.some(function(m){return m.id===id;}))members.push({id:id,mode:'walk'});});await T.patch({members:members});self.setState({sheet:null,addSel:[]});}});
@@ -285,7 +304,7 @@
    v.todayLabel=T.date(new Date());v.busy=core.busy;v.loading=core.loading;v.offline=core.offline;v.connLabel=core.offline?'연결 확인':'기기·권한';v.editable=editable;
    v.friends.forEach(function(row){if(!a||!a.members.some(function(m){return m.id===row.id;})){row.sub='추가한 일행';row.hasB=false;}});v.add.list.forEach(function(row){row.sub=row.dis?'이미 일행이에요':'초대할 일행';});v.shareNavLabel=a&&T.me(a)&&T.me(a).share?'위치 공유 중':'위치 공유 설정';
    if(s.form&&s.form.mode==='walk'){var travel=minuteDistance(s.form.origin_place,s.form.destination_place);v.fs={total:travel?travel+'분':'계산 대기',detail:'직선거리 기반 도보 추정',dep:travel?hm(s.form.time-travel-5):'—',arr:hm(s.form.time-5),mg:margin(5),note:'실제 이동 시간과 다를 수 있어요.'};}v.form.meeting=s.form&&s.form.meeting_at?new Date(new Date(s.form.meeting_at).getTime()-new Date(s.form.meeting_at).getTimezoneOffset()*60000).toISOString().slice(0,16):'';
-   h.cancelTrip=function(){self.setState({sheet:'change',ctx:{type:'cancelTrip',title:'일정을 취소할까요?',items:[a?a.name:'선택한 일정','참가자에게 취소 알림을 보내요','이번 약속의 위치 공유가 종료돼요'],who:a?a.members.map(function(m){return m.id;}):[],ok:'일정 취소',danger:true}});};v.cards=core.appointments.filter(isUpcoming).map(function(x){
+   v.cards=core.appointments.filter(isUpcoming).map(function(x){
     var timing=self.timingFor(x),members=x.members.filter(function(m){return m.status!=='declined';});
     var date=new Date(x.meeting_at);
     return {id:x.id,dest:x.destination.name,dateLabel:date.getFullYear()+'. '+(date.getMonth()+1)+'. '+date.getDate()+'.',timeLabel:T.time(date),
@@ -357,20 +376,9 @@
    h.create=function(){if(core.nativeStatus.restricted)return self.toast('주차한 뒤 일정을 만들어 주세요.');self._draftSerial=(self._draftSerial||0)+1;var serial=self._draftSerial;previousCreate();self.setState({meetingPickerOpen:false,formSaving:false,formError:'',nativeDestinationPending:null,destinationSearchOpen:false});if(core.nativeStatus.locationPermission&&core.nativeStatus.fusedPermission)T.locate().then(function(p){if(self._draftSerial!==serial||!self.state.form)return;var f=copy(self.state.form);f.origin_place=p;f.start='현재 위치';self.setState({form:f});}).catch(function(){});panel('create',self);};
    h.edit=function(){if(core.nativeStatus.restricted)return self.toast('주차한 뒤 일정을 수정해 주세요.');if(!a||!a.is_owner)return self.toast('약속을 만든 사람만 수정할 수 있어요.');self._draftSerial=(self._draftSerial||0)+1;previousEdit();self.setState({meetingPickerOpen:false,formSaving:false,formError:'',nativeDestinationPending:null,destinationSearchOpen:false});panel('create',self);};
    h.cancelForm=function(){self.cancelDestinationPreview();if(self.state.nativeDestinationPending)T.native('cancelDestinationSelection').catch(function(){});self.setState({nativeDestinationPending:null});self._draftSerial=(self._draftSerial||0)+1;previousCancel();if(core.nativeStatus.navigationPanel)T.native('closeNavigationPanel',{returnToApp:true}).catch(function(e){self.toast(e.message);});};
-   v.fMembers.forEach(function(u){var togglePickup=u.toggle;u.toggle=function(){var picked=self.state.form&&self.state.form.pickups||[];if(!picked.includes(u.id)&&picked.length>=2)return;return togglePickup();};u.pickupDisabled=!(self.state.form&&self.state.form.pickups||[]).includes(u.id)&&(self.state.form&&self.state.form.pickups||[]).length>=2;u.photo=photo(u.name);u.portraitClass='member-photo-button'+(u.isPk?' picked':'');u.pickupAria=u.name+' 픽업 '+(u.isPk?'해제':'선택');});
-   function previewPickup(id){return wrap(async function(){
-    var member=a&&a.members.find(function(m){return m.id===id;}),point=member&&member.pickup;
-    if(!point)throw new Error('일행이 픽업 위치를 공유하면 볼 수 있어요.');
-    if(self.state.nativeDestinationPending){await T.native('cancelDestinationSelection');self.setState({nativeDestinationPending:null});}
-    self.setState({pickupPreview:{name:member.name,place:point.name,address:point.address||(point.lat.toFixed(5)+', '+point.lon.toFixed(5)),notes:point.description},actionError:''});
-    await T.native('previewNavigationPlace',{place:point,pickupPanel:true});
-   });}
-   v.showPickupPreview=core.nativeStatus.navigationPanel==='pickup'&&!!s.pickupPreview;
-   v.pickupPreview=s.pickupPreview||{};
-   h.closePickupPreview=wrap(async function(){await T.native('closeNavigationPanel',{returnToApp:true});});
+   v.fMembers.forEach(function(u){u.photo=photo(u.name);u.portraitClass='member-photo-button'+(u.isPk?' picked':'');u.pickupAria=u.name+' 픽업 '+(u.isPk?'해제':'선택');});
    v.pickupPeople=(s.form?s.form.pickups:[]).map(function(id,index){var member=v.fMembers.find(function(m){return m.id===id;});return{id:id,order:index+1,name:member?member.name:'일행'};});
    v.noPickupPeople=!v.pickupPeople.length;
-   v.stops.forEach(function(row){if(row.isPk)row.preview=previewPickup(row.key);});
    h.fDest=function(){self.openDestinationSearch();};
    h.searchBack=function(){self.cancelDestinationPreview();self._searchGeneration=(self._searchGeneration||0)+1;clearTimeout(self._searchTimer);self.setState({screen:'create',destinationSelection:null});};
    h.searchRemote=wrap(async function(){await self.searchDestinations();});
@@ -413,7 +421,7 @@
      var row=v.stops.find(function(r){return r.key===id;});
      var time=member.boarded_at||timing.pickups[id];
      journeyStops.push({n:String(i+1),name:member.name+' 픽업',place:member.pickup?member.pickup.name:'픽업 위치 공유 대기',
-      status:member.boarded_at?'탑승 완료':'',time:time?T.time(time):'—',pickup:true,preview:previewPickup(id),
+      status:member.boarded_at?'탑승 완료':'',time:time?T.time(time):'—',pickup:true,
       up:row?row.up:function(){},down:row?row.down:function(){},upDisabled:phase!=='idle'||i===0,
       downDisabled:phase!=='idle'||i===order.length-1,upAria:member.name+' 픽업 순서 앞으로',downAria:member.name+' 픽업 순서 뒤로'});
     });
@@ -424,9 +432,15 @@
     durationLabel:phase==='idle'?'예상 소요 시간':'남은 소요 시간',notEditable:!a||!a.is_owner||phase!=='idle',
     pickupInProgress:!!a&&a.is_driver&&['driving','near','arrived'].includes(phase),
     canConfirmPickupArrival:['driving','near'].includes(phase),
-    canCancel:!!a&&a.is_owner&&['destination','parked'].includes(phase),
+    canFinishArrival:!!a&&a.is_driver&&!core.nativeStatus.restricted&&['destination','parked'].includes(phase),
     navigationDisabled:!a||!a.is_driver||['finished','cancelled'].includes(phase),
     navigationLabel:phase==='idle'?'출발하기':guidancePaused(a)?'안내 다시 시작':'내비 열기'};
+   h.finishArrival=wrap(async function(){
+    if(!v.journey.canFinishArrival||core.busy)return;
+    self.setState({actionError:''});
+    await T.finishArrival(a.id);
+    if(T.active()?.id===a.id&&self.state.screen==='detail')self.go('record');
+   });
    h.journeyNavigate=wrap(async function(){
     self.setState({actionError:''});
     if(phase==='idle')await self.startTrip();
@@ -450,8 +464,8 @@
     if(currentPickup&&currentPickup.pickup){var waypoint=(ns2.navigationWaypoints||[]).find(function(p){return p.stopId===currentPickup.id||Math.abs(p.lat-currentPickup.pickup.lat)<.002&&Math.abs(p.lon-currentPickup.pickup.lon)<.002;});if(waypoint)nextEta=waypoint;else if(nextEta&&nextEta.stopId!==currentPickup.id)nextEta=null;}
     if(window.PoolyPleos.fresh(nextEta))nextSeconds=Math.max(0,Math.ceil((nextEta.updatedAt+nextEta.seconds*1000-Date.now())/60000));
    }
-   v.pickupPanel={title:currentPickup?currentPickup.name+' 님에게 이동중':a?a.destination.name+' 이동중':'이동 중',remaining:nextSeconds===null?'확인 중':'약 '+nextSeconds+'분'};
-   if(s.guidanceNotice)v.pickupPanel=Object.assign({},v.pickupPanel,s.guidanceNotice);else v.pickupPanel.message='';
+   v.showGuidanceNotice=!!s.guidanceNotice;
+   v.pickupPanel=Object.assign({remaining:nextSeconds===null?'확인 중':'약 '+nextSeconds+'분'},s.guidanceNotice);
    v.pickupPanel.canCall=!!currentPickup;
    h.dismissPanel=function(){if(core.nativeStatus.navigationPanel)T.native('closeNavigationPanel',{returnToApp:false}).catch(function(e){self.toast(e.message);});else self.go('detail');};
    h.returnJourney=function(){self.setState({screen:'detail',sheet:null});if(core.nativeStatus.navigationPanel)T.native('closeNavigationPanel',{returnToApp:true}).catch(function(e){self.toast(e.message);});};

@@ -115,7 +115,7 @@ class PickupAutomation(private val base: String, private val token: String, priv
         } catch (_: Exception) { PleosRuntime.publish(JSONObject().put("seatPersonalization",JSONObject().put("seat",match.seat).put("feature","profile").put("updatedAt",System.currentTimeMillis()).put("status","profile-unavailable"))) }
         val next = policy.current(result)
         PleosRuntime.publish(JSONObject().put("pickupBoardingNotice",JSONObject().put("key",receipt).put("appointmentId",aid).put("observedAt",match.observedAt)
-            .put("title",m.getString("name")+" 님 승차 완료").put("message",next?.let { it.getString("name")+" 님에게 이동 중" } ?: ("목적지로 이동 중 · "+result.getJSONObject("destination").getString("name")))))
+            .put("title",m.getString("name")+" 님 탑승 완료").put("message",next?.let { it.getString("name")+" 님에게 이동 중" } ?: ("목적지로 이동 중 · "+result.getJSONObject("destination").getString("name")))))
         pendingRoute = result; routeAttempts = 0
     }
     private fun alight(drop: PickupPolicy.Alight, vehicleKey: String) {
@@ -139,12 +139,19 @@ class PickupAutomation(private val base: String, private val token: String, priv
     private fun navigate(a: JSONObject) {
         routeAttempts++; retryAt = System.currentTimeMillis()+3000
         try {
-            val route = request("/api/appointments/$aid/route")
-            val trip = a.getJSONObject("trip"); val active = trip.optJSONArray("active_pickups") ?: JSONArray()
-            val remaining = (trip.optInt("index") until active.length()).map { active.getString(it) }.toSet()
-            val raw = route.getJSONArray("stops"); val stops = JSONArray()
-            (0 until raw.length()).map { raw.getJSONObject(it) }.filter { it.optString("kind") != "start" && (it.optString("kind") != "pickup" || it.optString("id") in remaining) }.forEach { stops.put(it) }
-            check(stops.length()>0)
+            val trip = a.getJSONObject("trip")
+            val stop = if (trip.optString("phase") in setOf("driving", "near", "arrived")) {
+                val next = checkNotNull(policy.current(a)) { "Next pickup is missing" }
+                JSONObject(next.getJSONObject("pickup").toString())
+                    .put("kind", "pickup").put("id", next.getString("id")).put("person", next.getString("name"))
+            } else {
+                check(trip.optString("phase") == "destination")
+                val parking = a.optJSONObject("parking")
+                JSONObject((parking ?: a.getJSONObject("destination")).toString())
+                    .put("kind", if (parking == null) "dest" else "lot")
+                    .put("id", if (parking == null) "dest" else "lot")
+            }
+            val stops = JSONArray().put(stop)
             ui.post {
                 if (!closed) try { PleosRuntime.navigation?.navigate(stops,false,aid) ?: error("navigation-unavailable") }
                 catch (_: Exception) { PleosRuntime.publish(JSONObject().put("pickupAutomationStatus","navigation-retry-needed")) }

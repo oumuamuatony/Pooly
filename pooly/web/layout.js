@@ -6,7 +6,7 @@
   var active=document.activeElement,editing=active&&active.matches('input,textarea,[contenteditable="true"]');
   if(panel==='create'&&editing&&stableViewport&&Math.abs(w-stableViewport.w)<4&&h<stableViewport.h){h=stableViewport.h;}
   else stableViewport={w:w,h:h};
-  var size={create:[420,680],moving:[497,175],pickup:[497,246]}[panel];
+  var size={create:[420,680],moving:[497,175]}[panel];
   var scale=size?Math.min(w/size[0],h/size[1]):phone?Math.min(w/390,1.5):Math.min(w/1194,h/834);
   scale=Math.max(.45,scale);
   document.documentElement.style.setProperty('--frame-width',(w/scale)+'px');

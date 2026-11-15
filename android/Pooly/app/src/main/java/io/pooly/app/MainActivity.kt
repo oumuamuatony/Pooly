@@ -99,10 +99,17 @@ class MainActivity : Activity() {
                 when (request.getString("action")) {
                     "api" -> {
                         val path = payload.getString("path"); val method = payload.optString("method", "GET")
-                        if (restricted && (method == "PATCH" || path == "/api/contacts" || path == "/api/appointments" && method == "POST")) throw IllegalStateException("차량을 주차한 뒤 약속을 설정해 주세요.")
+                        if (restricted && (method in setOf("PATCH", "DELETE") || path == "/api/contacts" || path == "/api/appointments" && method == "POST")) throw IllegalStateException("차량을 주차한 뒤 약속을 설정해 주세요.")
                         io.execute { try { done(PoolyApi.request(apiBase, path, method, payload.optJSONObject("body"), payload.optString("token"))) } catch (_: Exception) { fail("Pooly 서버에 연결하지 못했어요. 인터넷 연결을 확인해 주세요.") } }
                     }
                     "session" -> { preferences.edit().putString("token", payload.getString("token")).putString("role", payload.getString("role")).putString("base", apiBase).apply(); done(JSONObject().put("saved", true)) }
+                    "restoreSession" -> {
+                        check(isCar)
+                        val savedToken = preferences.getString("token", "").orEmpty().takeIf {
+                            preferences.getString("base", "") == apiBase && preferences.getString("role", "") == "car"
+                        }.orEmpty()
+                        done(JSONObject().put("token", savedToken))
+                    }
                     "context" -> { val aid = payload.optString("appointmentId"); require(aid.isEmpty() || aid.matches(Regex("[a-f0-9]{24}"))); preferences.edit().putString("appointmentId", aid).apply(); done(JSONObject().put("saved", true)) }
                     "sdkStatus" -> done(JSONObject(sdkStatus.toString()))
                     "speak" -> { check(isCar); voice?.speak(payload.getString("text")) ?: throw IllegalStateException("차량 음성 서비스를 사용할 수 없어요."); done(JSONObject().put("requested", true)) }
@@ -125,18 +132,7 @@ class MainActivity : Activity() {
                     "previewNavigationPlace" -> {
                         check(isCar && !restricted) { "주차한 뒤 장소를 확인해 주세요." }
                         val navi = navigation ?: throw IllegalStateException("Pleos 내비 연결을 확인해 주세요.")
-                        val pickupPanel = payload.optBoolean("pickupPanel")
-                        check(!pickupPanel || Settings.canDrawOverlays(this)) { "다른 앱 위에 표시 권한을 허용해 주세요." }
-                        val place = payload.getJSONObject("place")
-                        if (pickupPanel && place.optString("name") == "선택한 픽업 위치") {
-                            showPanel("pickup")
-                            done(JSONObject().put("requested", true).put("mode", "coordinates"))
-                        } else navi.previewPlace(place, payload.optBoolean("allowSearchFallback", true)) { result ->
-                            try {
-                                if (pickupPanel && result.optBoolean("requested")) showPanel("pickup", openNavigation = false)
-                                done(result)
-                            } catch (error: Exception) { fail(error.message ?: "픽업 위치 창을 열지 못했어요.") }
-                        }
+                        navi.previewPlace(payload.getJSONObject("place"), payload.optBoolean("allowSearchFallback", true), ::done)
                     }
                     "showNavigationPanel" -> {
                         check(isCar) { "Pleos 차량에서 사용할 수 있어요." }
@@ -274,7 +270,7 @@ class MainActivity : Activity() {
         if (code == 102) { val callback = notificationReply; notificationReply = null; callback?.invoke(NotificationManagerCompat.from(this).areNotificationsEnabled()) }
         status()
     }
-    private fun showPanel(mode: String, openNavigation: Boolean = true) {
+    private fun showPanel(mode: String, openNavigation: Boolean = mode != "moving") {
         check(mode == "moving" || !restricted) { "주차한 뒤 화면을 열어 주세요." }
         check(sdkStatus.optBoolean("navigationConnected")) { "Pleos 내비 연결을 기다려 주세요." }
         if (openNavigation) navigation?.cancelPendingWindowReveal()
@@ -288,7 +284,7 @@ class MainActivity : Activity() {
         pendingPanel = null
         ui.removeCallbacks(expireMovingPanel)
         if (panel?.visible != true) return
-        if (panel?.mode in setOf("create", "pickup")) navigation?.cancelPreview()
+        if (panel?.mode == "create") navigation?.cancelPreview()
         panel?.close(); status()
         if (returnToApp) {
             navigation?.cancelPendingWindowReveal(); NavigationWindows.restore(this)

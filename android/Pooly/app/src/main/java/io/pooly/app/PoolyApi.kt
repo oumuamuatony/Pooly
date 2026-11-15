@@ -14,7 +14,7 @@ object PoolyApi {
     }
     fun request(base: String, path: String, method: String, body: JSONObject? = null, token: String = "", timeoutMs: Int = 7000): JSONObject {
         require(path.startsWith("/api/") && !path.contains("..") && !path.contains("\\") && !path.contains("#") && !path.contains("\n") && path.length < 1600)
-        require(method in setOf("GET", "POST", "PATCH"))
+        require(method in setOf("GET", "POST", "PATCH", "DELETE"))
         val connection = URL(allowedBase(base) + path).openConnection() as HttpURLConnection
         try {
             connection.requestMethod = method
@@ -22,7 +22,7 @@ object PoolyApi {
             connection.instanceFollowRedirects = false
             connection.setRequestProperty("Content-Type", "application/json")
             if (token.isNotEmpty()) connection.setRequestProperty("Authorization", "Bearer $token")
-            if (method != "GET") { connection.doOutput = true; connection.outputStream.use { it.write((body ?: JSONObject()).toString().toByteArray()) } }
+            if (method in setOf("POST", "PATCH")) { connection.doOutput = true; connection.outputStream.use { it.write((body ?: JSONObject()).toString().toByteArray()) } }
             val status = connection.responseCode
             val source = if (status >= 400) connection.errorStream else connection.inputStream
             val text = source?.bufferedReader()?.use { it.readText() } ?: "{}"

@@ -19,6 +19,7 @@ class StopRecorder(private val hourOf: (Long) -> Int = { at -> Calendar.getInsta
         fun json(): JSONObject = JSONObject().put("lat", lat).put("lon", lon).put("dwell_s", dwellS).put("hour", hour).put("kind", kind)
     }
 
+    private val pickupPolicy = PickupPolicy()
     private var moved = false
     private var startedAt = 0L
     private var lat = Double.NaN
@@ -33,7 +34,7 @@ class StopRecorder(private val hourOf: (Long) -> Int = { at -> Calendar.getInsta
     /** Feeds one telemetry snapshot; returns the records to send when a stop with seat changes ends. */
     fun update(ns: JSONObject, now: Long): List<Stop> {
         val motion = ns.optJSONObject("vehicleMotion")
-        if (!PickupPolicy.fresh(motion, now)) return emptyList()
+        if (!pickupPolicy.fresh(motion, now)) return emptyList()
         val kmh = abs(motion!!.optDouble("speedMps", Double.NaN)) * 3.6
         if (!kmh.isFinite()) return emptyList()
         if (kmh >= MOVING_KMH) {
@@ -46,7 +47,7 @@ class StopRecorder(private val hourOf: (Long) -> Int = { at -> Calendar.getInsta
             if (kmh > STOPPED_KMH) return emptyList()
             startedAt = now
         }
-        if (!lat.isFinite()) ns.optJSONObject("navigationPosition")?.takeIf { PickupPolicy.fresh(it, now, 10000) }?.let {
+        if (!lat.isFinite()) ns.optJSONObject("navigationPosition")?.takeIf { pickupPolicy.fresh(it, now, 10000) }?.let {
             lat = it.optDouble("lat", Double.NaN); lon = it.optDouble("lon", Double.NaN)
         }
         observeSeats(ns, now)
@@ -59,7 +60,7 @@ class StopRecorder(private val hourOf: (Long) -> Int = { at -> Calendar.getInsta
         for (seat in rows.keys()) {
             if (seat == driver) continue
             val row = rows.optJSONObject(seat) ?: continue
-            if (!PickupPolicy.fresh(row, now)) continue
+            if (!pickupPolicy.fresh(row, now)) continue
             val changedAt = row.optLong("changedAt")
             // Seat polling and speed polling are both ~2 s apart: accept a change right at the stop start.
             if (changedAt < startedAt - SAMPLE_SLACK_MS || now - changedAt < STABLE_MS) continue

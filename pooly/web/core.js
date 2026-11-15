@@ -85,6 +85,10 @@
   }
   async function init(){
     if(app.invite){try{app.inviteAid=JSON.parse(atob(app.invite.split('.')[0].replace(/-/g,'+').replace(/_/g,'/')))[0];}catch(e){}try{app.invitation=await api('/invites/'+encodeURIComponent(app.invite),'GET',undefined,true);}catch(e){app.inviteError=e.message;}}
+    if(!token&&app.native&&role==='car'){
+      var saved=await native('restoreSession').catch(function(){return null;});
+      if(saved&&saved.token){token=saved.token;localStorage.setItem(prefix+'token',token);}
+    }
     if(!token)await register(role==='car'?'운전자':app.invitation?app.invitation.member.name:'참가자');
     else if(window.PoolyNative)await native('session',{token:token,role:role});
     await refresh();
@@ -104,8 +108,35 @@
   }
   function select(id){app.selected=id;localStorage.setItem(prefix+'selected',id);if(app.native)native('context',{appointmentId:id||''}).catch(function(){});app.route=null;routeKey='';emit();loadRoute(true);}
   async function create(data){var a=await run(function(){return api('/appointments','POST',data);});select(a.id);return a;}
+  async function deleteAppointment(id){
+    await run(function(){return api('/appointments/'+id,'DELETE');});
+    if(app.native&&app.nativeStatus.navigationAid===id)native('endNavigation',{appointmentId:id}).catch(function(){});
+  }
   async function patch(data){var a=active();if(!a)throw new Error('약속을 먼저 선택해 주세요.');return run(function(){return api('/appointments/'+a.id,'PATCH',Object.assign({revision:a.revision},data));});}
-  async function action(name){var a=active();if(!a)throw new Error('약속을 먼저 선택해 주세요.');var result=await run(function(){return api('/appointments/'+a.id+'/actions','POST',{action:name});});if(app.native&&(name==='board'||name==='skip')&&app.nativeStatus.navigationAid===a.id&&app.nativeStatus.navigationSegmentOnly)native('forgetNavigation').catch(function(){});if(name==='finish'||name==='cancel'){stopTracking();if(app.native)await native('endNavigation',{appointmentId:a.id});}return result;}
+  async function action(name){var a=active();if(!a)throw new Error('약속을 먼저 선택해 주세요.');var result=await run(function(){return api('/appointments/'+a.id+'/actions','POST',{action:name});});if(app.native&&name==='skip'&&app.nativeStatus.navigationAid===a.id)await navigate();if(name==='finish'||name==='cancel'){stopTracking();if(app.native)await native('endNavigation',{appointmentId:a.id});}return result;}
+  async function finishArrival(id){
+    var path='/appointments/'+id+'/actions';
+    var result=await run(async function(){
+      var appointment=app.appointments.find(function(item){return item.id===id;});
+      if(!appointment||!appointment.is_driver||!['destination','parked'].includes(appointment.trip.phase)){
+        throw new Error('목적지로 이동 중인 일정에서만 도착을 완료할 수 있어요.');
+      }
+      try{
+        if(appointment.trip.phase==='destination')await api(path,'POST',{action:'park'});
+        return await api(path,'POST',{action:'finish'});
+      }catch(e){
+        if(e.status===409){
+          var snapshot=await api('/state');
+          var finished=snapshot.appointments.find(function(item){return item.id===id&&item.trip.phase==='finished';});
+          if(finished)return finished;
+        }
+        throw e;
+      }
+    });
+    if(app.selected===id)stopTracking();
+    if(app.native)native('endNavigation',{appointmentId:id}).catch(function(){});
+    return result;
+  }
   async function member(data){var a=active();if(!a)throw new Error('약속을 먼저 선택해 주세요.');var result=await run(function(){return api('/appointments/'+a.id+'/member','POST',data);});if(data.share===false||data.action==='arrive')stopTracking();return result;}
   async function join(data){if(!app.invite)throw new Error('초대 링크를 먼저 열어 주세요.');return run(async function(){var a=await api('/invites/'+encodeURIComponent(app.invite)+'/join','POST',data);if(a.id)app.selected=a.id;return a;});}
   async function addContact(name){return run(function(){return api('/contacts','POST',{name:name});});}
@@ -140,6 +171,7 @@
     var stops=route.stops.filter(function(p){return p.kind!=='start';});
     var boarded=a.trip.boarded||[],remaining=a.trip.phase==='idle'?a.pickup_order:(a.trip.active_pickups||[]).slice(a.trip.index||0);
     stops=stops.filter(function(p){return p.kind!=='pickup'||remaining.includes(p.id)&&!boarded.includes(p.id);});
+    if(remaining.length&&stops[0]?.id!==remaining[0])throw new Error('다음 일행의 픽업 위치를 확인해 주세요.');
     app.nativeStatus.navigationAid=a.id;
     return native('navigate',{stops:stops,appointmentId:a.id});
   }
@@ -159,5 +191,5 @@
   }
   document.addEventListener('visibilitychange',function(){if(app.native?(app.nativeStatus.foreground||app.nativeStatus.navigationAid===app.selected):document.visibilityState==='visible')refresh();});
   window.addEventListener('pooly:native',function(e){app.nativeStatus=Object.assign({},app.nativeStatus,e.detail);document.documentElement.classList.toggle('vehicle-restricted',!!app.nativeStatus.restricted);if(e.detail.navigationMessage)window.dispatchEvent(new CustomEvent('pooly:error',{detail:e.detail.navigationMessage}));emit();});
-  window.Pooly={app:app,role:role,api:api,native:native,on:function(fn){listeners.add(fn);return function(){listeners.delete(fn);};},active:active,me:me,driver:driver,init:init,refresh:refresh,select:select,create:create,patch:patch,action:action,member:member,join:join,addContact:addContact,shareInvite:shareInvite,inviteUrl:inviteUrl,locate:locate,startTracking:startTracking,stopTracking:stopTracking,navigate:navigate,time:time,date:date,minutes:minutes,color:rgbaName,status:status,estimate:estimate,message:function(body){var a=active();return run(function(){return api('/appointments/'+a.id+'/messages','POST',{body:body});});},search:function(q){return api('/places?q='+encodeURIComponent(q));}};
+  window.Pooly={app:app,role:role,api:api,native:native,on:function(fn){listeners.add(fn);return function(){listeners.delete(fn);};},active:active,me:me,driver:driver,init:init,refresh:refresh,select:select,create:create,deleteAppointment:deleteAppointment,patch:patch,action:action,finishArrival:finishArrival,member:member,join:join,addContact:addContact,shareInvite:shareInvite,inviteUrl:inviteUrl,locate:locate,startTracking:startTracking,stopTracking:stopTracking,navigate:navigate,time:time,date:date,minutes:minutes,color:rgbaName,status:status,estimate:estimate,message:function(body){var a=active();return run(function(){return api('/appointments/'+a.id+'/messages','POST',{body:body});});},search:function(q){return api('/places?q='+encodeURIComponent(q));}};
 })();

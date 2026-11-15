@@ -321,8 +321,8 @@ html[data-navigation-panel] .app>.nav{display:none!important}
 .app .create-body{overflow:visible}
 .app .member-portraits{gap:12px;flex-wrap:wrap;overflow:visible}
 .app .member-photo-button:disabled:not(.picked){cursor:default;opacity:.38}
-.app .pickup-sequence{display:flex;flex-direction:column;gap:8px}
-.app .pickup-sequence-row{display:flex;align-items:center;gap:12px;min-height:38px;padding:4px 0}
+.app .pickup-sequence{display:flex;flex-direction:column;gap:8px;max-height:144px;overflow-y:auto}
+.app .pickup-sequence-row{display:flex;flex:none;align-items:center;gap:12px;min-height:38px;padding:4px 0}
 .app .pickup-sequence-row>span{display:grid;place-items:center;width:27px;height:27px;border-radius:50%;background:#002c5f;color:#fff;font-size:17px;font-weight:600;flex:none}
 .app .pickup-sequence-row strong{font-size:24px;line-height:30px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .app .create-body:has(.member-portrait:nth-child(6)){gap:10px}
@@ -351,13 +351,3 @@ html[data-navigation-panel] .app>.nav{display:none!important}
 .app .appointment-card .appointment-actions{gap:10px}
 .app .appointment-card .appointment-actions .btn{width:120px;height:46px;font-size:20px}
 .app .form-error{margin:0;color:#9a2431;font-size:16px;line-height:21px}
-
-html[data-navigation-panel="pickup"] .app > :not(.pickup-preview-screen){display:none!important}
-html[data-navigation-panel="pickup"] .app>.pickup-preview-screen{top:0!important}
-.app .pickup-preview-panel{display:grid;grid-template-rows:auto 1fr auto;gap:10px;height:100%;padding:19px 23px;overflow:hidden;border-radius:22px;background:linear-gradient(145deg,#ffffff66,#f4f7fb22);box-shadow:inset 0 0 0 1px #ffffffcc}
-.app .pickup-preview-panel h1{margin:0;font-size:28px}
-.app .pickup-preview-place{overflow:auto}
-.app .pickup-preview-place strong{font-size:23px}
-.app .pickup-preview-place p{margin:3px 0;color:#495361;font-size:17px;overflow-wrap:anywhere}
-.app .pickup-preview-place p:empty{display:none}
-.app .pickup-preview-panel .btn{width:100%;min-height:48px}

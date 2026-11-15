@@ -47,6 +47,7 @@ class PleosNavigation(context: Context, private val event: (JSONObject) -> Unit)
     private var generation = 0
     private var windowGeneration = 0
     private var routeDriving = false
+    private var pickupReached = false
     private var boundConfirmed = false
     private var sessionId=""
     private var requestedAt=0L
@@ -111,7 +112,7 @@ class PleosNavigation(context: Context, private val event: (JSONObject) -> Unit)
             routeDriving = routeStateInfo.naviMode in setOf(NaviMode.ROUTE_GUIDING, NaviMode.SIMULATION_GUIDING)
             event(JSONObject().put("navigationMode", routeStateInfo.naviMode.name))
             if(requested&&routeDriving&&boundConfirmed&&!cancelPending) syncStatus("guiding")
-            if(requested&&routeStateInfo.naviMode!=NaviMode.NOT_WORKING&&stopPolicy.observe(System.currentTimeMillis(),routeDriving,routeStateInfo.isRouting,boundConfirmed,awaitingCompletion)) {
+            if(requested&&(!pickupReached||cancelPending)&&routeStateInfo.naviMode!=NaviMode.NOT_WORKING&&stopPolicy.observe(System.currentTimeMillis(),routeDriving,routeStateInfo.isRouting,boundConfirmed,awaitingCompletion)) {
                 stopped(if(cancelPending)"app_ended" else "oem_stopped");return@onUi
             }
             if(requested&&!routeDriving&&!routeStateInfo.isRouting) checkStoppedSoon()
@@ -173,8 +174,13 @@ class PleosNavigation(context: Context, private val event: (JSONObject) -> Unit)
             val target = boundDestination ?: return@onUi
             val destination = lastDestination ?: return@onUi
             if (!requested || !boundConfirmed || cancelPending || otherDestination != null ||
-                target.optString("id") !in setOf("dest", "lot") ||
                 destinationArrivedInfo.name != destination.optString("name")) return@onUi
+            if (target.optString("kind") == "pickup") {
+                pickupReached = true
+                arrived()
+                return@onUi
+            }
+            if (target.optString("id") !in setOf("dest", "lot")) return@onUi
             val aid = preferences.getString("navigationAppointment", "").orEmpty()
             if (aid.isBlank()) return@onUi
             event(JSONObject().put("navigationFinalArrival", JSONObject(destination.toString())
@@ -379,22 +385,32 @@ class PleosNavigation(context: Context, private val event: (JSONObject) -> Unit)
     private fun finishPreview() {
         val point = previewPoint ?: return; val reply = previewReply ?: return
         previewPoint = null; previewReply = null
+        val name = point.getString("name").replaceFirst(Regex("""^추천 \d+ · """), "").trim()
+        val address = point.optString("address").trim()
+        val hasPlaceName = name !in setOf("선택한 픽업 위치", "내가 있는 위치", "현재 위치", "추천 위치") &&
+            !name.startsWith("승차 기록 ")
         val recent = recentPlaces.firstOrNull {
             val lat = it.displayLatitude ?: it.latitude; val lon = it.displayLongitude ?: it.longitude
-            val nameMatches = it.name.replace(" ", "") == point.getString("name").replace(" ", "")
+            val nameMatches = !hasPlaceName || it.name.replace(" ", "") == name.replace(" ", "")
             it.poiId.isNotBlank() && nameMatches && validPoint(lat, lon) && kotlin.math.abs(lat - point.getDouble("lat")) < .0001 && kotlin.math.abs(lon - point.getDouble("lon")) < .0001
         }
         // External provider IDs (for example VWorld IDs) cannot identify a Pleos POI.
         val poiId = recent?.poiId ?: if(point.optString("source")=="pleos")point.optString("poiId") else ""
         val provider = recent?.poiProvider ?: if(point.optString("source")=="pleos")point.optString("poiProvider") else ""
-        if (poiId.isBlank() && !previewAllowsSearch) {
+        val keyword = when {
+            (point.optString("kind") == "address" || !hasPlaceName) &&
+                address.isNotBlank() && !address.contains("데이터 기반 추천") && !address.contains("기록 기반 추천") &&
+                !address.matches(Regex("""[-+\d.,\s]+""")) && address != "현재 위치에서 지정" -> address
+            hasPlaceName -> name
+            else -> ""
+        }.take(120)
+        if (poiId.isBlank() && (!previewAllowsSearch || keyword.isBlank())) {
             screenGeneration++
             reply(JSONObject().put("requested", false).put("mode", "selection_only"))
             return
         }
         open()
         val request = ++screenGeneration
-        val keyword = (if(point.optString("kind")=="address")point.optString("address").ifBlank { point.getString("name") } else point.getString("name")).take(120)
         ui.postDelayed({ if (request == screenGeneration && ready) {
             if (poiId.isNotBlank()) helper.requestNavigationScreen(NavigationScreenRequest.POIDetailPopup(poiId, provider))
             else helper.requestNavigationScreen(NavigationScreenRequest.SearchPlace(keyword))
@@ -431,19 +447,21 @@ class PleosNavigation(context: Context, private val event: (JSONObject) -> Unit)
         require(appointmentId.isEmpty() || appointmentId.matches(Regex("[a-f0-9]{24}")))
         require(stops.length() > 0) { "안내할 장소가 없어요." }
         for (i in 0 until stops.length()) { val p = stops.getJSONObject(i); require(p.getDouble("lat").isFinite() && p.getDouble("lat") in -90.0..90.0 && p.getDouble("lon").isFinite() && p.getDouble("lon") in -180.0..180.0) }
-        // Public SDK supports FIRST and SECOND waypoint indices. For a longer
-        // pickup chain, guide the next pickup and request the next leg after boarding.
-        val segment = if (stops.length() > 3) listOf(stops.getJSONObject(0)) else (0 until stops.length()).map { stops.getJSONObject(it) }
+        // Keep the active pickup as the OEM destination so guidance cannot bypass it.
+        val segmentOnly = stops.length() > 3 || (appointmentId.isNotEmpty() && stops.length() > 1 && stops.getJSONObject(0).optString("kind") == "pickup")
+        val segment = if (segmentOnly) listOf(stops.getJSONObject(0)) else (0 until stops.length()).map { stops.getJSONObject(it) }
         val dest = segment.last()
         if(requested)syncStatus("stopped","route_replaced")
         sessionId=java.util.UUID.randomUUID().toString();requestedAt=System.currentTimeMillis();lastSyncedStatus=""
-        cancelPending=false;cancelAttempts=0;otherDestination=null;routeDriving=false;generation++
+        cancelPending=false;cancelAttempts=0;otherDestination=null;routeDriving=false;pickupReached=false;generation++
         stopPolicy.begin(requestedAt)
         boundDestination = dest; boundWaypoints = segment.dropLast(1); requested = true; openOnComplete = foreground; awaitingCompletion = true; boundConfirmed = false; routeDriving = false
         preferences.edit().putString("navigationSessionId",sessionId).putLong("navigationRequestedAt",requestedAt).putString("navigationAppointment", appointmentId).putString("navigationDestination", dest.toString()).putString("navigationRequestedWaypoints", JSONArray(boundWaypoints).toString()).putBoolean("navigationConfirmed", false).apply()
         syncStatus("requested")
-        event(JSONObject().put("navigation", "requested").put("navigationAid", appointmentId).put("navigationSegmentOnly", stops.length() > 3).put("navigationEta", JSONObject.NULL).put("navigationFinalArrival", JSONObject.NULL).put("navigationWaypoints", JSONArray()))
-        val route = RouteInfo(latitude = dest.getDouble("lat"), longitude = dest.getDouble("lon"), poiName = dest.optString("name"), address = dest.optString("address"), poiId = "", poiSubId = "", routeOption = RouteOption.RECOMMENDED)
+        event(JSONObject().put("navigation", "requested").put("navigationAid", appointmentId).put("navigationSegmentOnly", segmentOnly).put("navigationEta", JSONObject.NULL).put("navigationFinalArrival", JSONObject.NULL).put("navigationWaypoints", JSONArray()))
+        val passenger = dest.optString("person")
+        val destinationLabel = if (dest.optString("kind") == "pickup" && passenger.isNotBlank()) "$passenger 님에게 이동 중" else dest.optString("name")
+        val route = RouteInfo(latitude = dest.getDouble("lat"), longitude = dest.getDouble("lon"), poiName = destinationLabel, address = dest.optString("address"), poiId = "", poiSubId = "", routeOption = RouteOption.RECOMMENDED)
         if (segment.size == 1) helper.requestRoute(route)
         else {
             val waypoints = segment.dropLast(1).mapIndexed { index, p -> RequestWaypointInfo(latitude = p.getDouble("lat"), longitude = p.getDouble("lon"), poiName = p.optString("name"), waypointIndex = if (index == 0) WaypointIndex.FIRST else WaypointIndex.SECOND, address = p.optString("address"), poiId = "", poiSubId = "") }
@@ -454,7 +472,7 @@ class PleosNavigation(context: Context, private val event: (JSONObject) -> Unit)
         if (foreground) { openOnComplete = false; open() }
         val requestGeneration = ++generation
         ui.postDelayed({ if (requested && requestGeneration == generation && awaitingCompletion) { openOnComplete = false; event(JSONObject().put("navigation", "timeout").put("navigationMessage", "차량 내비의 경로 완료 응답이 없어요. 내비 화면에서 경로를 확인해 주세요.")) } }, 15000)
-        return JSONObject().put("requested", true).put("waypoints", segment.size - 1).put("segmentOnly", stops.length() > 3).put("message", if (stops.length() > 3) "다음 픽업 장소까지 안내를 요청했어요. 탑승 후 다음 경로를 요청해 주세요." else "차량 내비에 경로 탐색을 요청했어요. 완료 응답을 기다려 주세요.")
+        return JSONObject().put("requested", true).put("waypoints", segment.size - 1).put("segmentOnly", segmentOnly).put("message", "차량 내비에 경로 탐색을 요청했어요.")
     }
     fun close() { ui.removeCallbacksAndMessages(null); onConnected = null; placesReply = null; previewReply = null; previewPoint = null; selectionId = null; try { helper.removeListener(listener); helper.release() } catch (_: Exception) {} }
 }

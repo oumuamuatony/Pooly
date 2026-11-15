@@ -35,7 +35,7 @@ class NavigationPanelWindow(private val activity: Activity, private val web: Web
     val visible get() = mode.isNotEmpty()
 
     fun show(requestedMode: String) {
-        require(requestedMode in setOf("create", "moving", "pickup"))
+        require(requestedMode in setOf("create", "moving"))
         val first = !visible
         if (first) {
             // A hidden WebView can retain its previous small overlay measurement.
@@ -51,9 +51,8 @@ class NavigationPanelWindow(private val activity: Activity, private val web: Web
             parent?.removeView(web); web.setBackgroundColor(Color.TRANSPARENT)
         }
         val moving = requestedMode == "moving"
-        val pickup = requestedMode == "pickup"
-        val designWidth = if (moving || pickup) 497 else 420
-        val designHeight = when (requestedMode) { "moving" -> 175; "pickup" -> 246; else -> 680 }
+        val designWidth = if (moving) 497 else 420
+        val designHeight = if (moving) 175 else 680
         val params = WindowManager.LayoutParams(
             (designWidth * scale).roundToInt(), (designHeight * scale).roundToInt(),
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
@@ -62,9 +61,9 @@ class NavigationPanelWindow(private val activity: Activity, private val web: Web
             PixelFormat.TRANSLUCENT
         ).apply {
             gravity = Gravity.TOP or Gravity.LEFT
-            x = if (moving || pickup) originX + viewportWidth - ((designWidth + 12) * scale).roundToInt()
+            x = if (moving) originX + viewportWidth - ((designWidth + 12) * scale).roundToInt()
                 else originX + (12 * scale).roundToInt()
-            y = if (moving || pickup) originY + (39 * scale).roundToInt()
+            y = if (moving) originY + (39 * scale).roundToInt()
                 else originY + (viewportHeight - ((designHeight + 12) * scale).roundToInt()).coerceAtLeast(0)
             // Keep the glass panel at its original bounds. The IME overlays the bottom instead.
             softInputMode = WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING
