@@ -28,6 +28,8 @@ class PickupAutomation(private val base: String, private val token: String, priv
     // In-car seat heat/ventilation changes by a boarded passenger, read every 3 s and learned by the server.
     private val thermalReads = java.util.concurrent.ConcurrentHashMap<String, JSONObject>()
     private val thermalSeen = mutableMapOf<String, JSONObject>()
+    // Longer than the 7-second boarding notice: change settings after it disappears.
+    private val LEARN_GRACE_MS = 8000L
     private var nextThermalRead = 0L
     fun start() {
         PleosRuntime.publish(JSONObject().put("pickupAutomation",true))
@@ -133,12 +135,15 @@ class PickupAutomation(private val base: String, private val token: String, priv
             if (binding.optString("vehicle_key") != vehicle.vehicleKey) continue
             val id = m.getString("id"); val seat = binding.optString("seat")
             val read = thermalReads.remove(id)
-            if (read != null) {
+            // Pooly applies the saved settings within a few seconds of boarding: readings in that window are not a baseline,
+            // so a change the passenger makes right after the window is still compared with the settings Pooly applied.
+            if (read != null && now - profileRequestedAt < LEARN_GRACE_MS) thermalSeen.remove(id)
+            else if (read != null) {
                 val cabin = read.optDouble("cabinC", Double.NaN)
                 val previous = thermalSeen.put(id, read)
-                // The first reading is the baseline; changes Pooly itself applied right after boarding are not learned.
-                if (previous != null && now - profileRequestedAt > 15000 && cabin.isFinite()) {
-                    val body = JSONObject().put("member_id",id).put("seat",seat).put("cabin_c",cabin)
+                if (previous != null) {
+                    val body = JSONObject().put("member_id",id).put("seat",seat)
+                    if (cabin.isFinite()) body.put("cabin_c",cabin)
                     // Zone climate is learned only when the passenger's zone is not shared with the driver.
                     val fields = if (read.optBoolean("sharedZone")) listOf("heat" to "heat", "vent" to "vent")
                         else listOf("heat" to "heat", "vent" to "vent", "targetTemp" to "target_temp", "fanDirection" to "fan_direction")
@@ -147,24 +152,31 @@ class PickupAutomation(private val base: String, private val token: String, priv
                         if (read.isNull(key) || previous.isNull(key)) continue
                         if (read.get(key).toString() != previous.get(key).toString()) { body.put(api, read.get(key)); changed = true }
                     }
-                    if (changed) try {
-                        val values = request("/api/appointments/$aid/seat-learning","POST",body).optJSONObject("values")
-                        if (values != null && values.length() > 0) {
-                            val parts = mutableListOf<String>()
-                            if (values.has("cold_heat")) parts.add("열선 ${values.getInt("cold_heat")}단계")
-                            if (values.has("hot_ventilation")) parts.add("통풍 ${values.getInt("hot_ventilation")}단계")
-                            if (values.has("target_temp")) parts.add("희망 온도 ${values.getDouble("target_temp")}℃")
-                            if (values.has("fan_direction")) parts.add("바람 " + fanLabel(values.getString("fan_direction")))
-                            PleosRuntime.publish(JSONObject().put("seatLearnedNotice",JSONObject().put("key","$aid:$id:$now").put("appointmentId",aid)
-                                .put("observedAt",now).put("title",m.optString("name")+" 님 좌석 설정 저장")
-                                .put("message","실내 ${Math.round(cabin)}℃에서 바꾼 설정: " + parts.joinToString(" · "))))
-                        }
-                    } catch (_: Exception) {}
+                    val name = m.optString("name")
+                    if (changed && !cabin.isFinite()) seatNotice(id, now, "$name 님 좌석 설정을 저장하지 못했어요", "실내 온도를 읽지 못했어요.")
+                    else if (changed) try {
+                        val values = request("/api/appointments/$aid/seat-learning","POST",body).optJSONObject("values") ?: JSONObject()
+                        val parts = mutableListOf<String>()
+                        if (values.has("cold_heat")) parts.add("열선 ${values.getInt("cold_heat")}단계")
+                        if (values.has("hot_ventilation")) parts.add("통풍 ${values.getInt("hot_ventilation")}단계")
+                        if (values.has("target_temp")) parts.add("희망 온도 ${values.getDouble("target_temp")}℃")
+                        if (values.has("fan_direction")) parts.add("바람 " + fanLabel(values.getString("fan_direction")))
+                        // Say why a change was not kept, so the passenger is not surprised next time.
+                        val c = Math.round(cabin)
+                        if (body.has("heat") && !values.has("cold_heat")) parts.add("열선은 실내 20℃ 이하에서만 기억 (지금 ${c}℃)")
+                        if (body.has("vent") && !values.has("hot_ventilation")) parts.add("통풍은 실내 26℃ 이상에서만 기억 (지금 ${c}℃)")
+                        if (parts.isNotEmpty()) seatNotice(id, now, if (values.length() > 0) "$name 님 좌석 설정 저장" else "$name 님 좌석 설정은 저장하지 않았어요",
+                            (if (values.length() > 0) "실내 ${c}℃에서 바꾼 설정: " else "") + parts.joinToString(" · "))
+                    } catch (e: Exception) { seatNotice(id, now, "$name 님 좌석 설정을 저장하지 못했어요", e.message ?: "서버에 연결하지 못했어요.") }
                 }
             }
             if (now >= nextThermalRead) vehicle.observeSeat(seat) { thermalReads[id] = it }
         }
         if (now >= nextThermalRead) nextThermalRead = now + 3000
+    }
+    private fun seatNotice(memberId: String, now: Long, title: String, message: String) {
+        PleosRuntime.publish(JSONObject().put("seatLearnedNotice",JSONObject().put("key","$aid:$memberId:$now").put("appointmentId",aid)
+            .put("observedAt",now).put("title",title).put("message",message)))
     }
     private fun fanLabel(name: String) = when (name) {
         "FACE" -> "얼굴"
