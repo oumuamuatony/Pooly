@@ -4,6 +4,7 @@ import ai.pleos.playground.vehicle.Vehicle
 import ai.pleos.playground.vehicle.api.model.area.SeatArea
 import ai.pleos.playground.vehicle.api.model.capability.AccessType
 import ai.pleos.playground.vehicle.constant.area.SeatValue
+import ai.pleos.playground.vehicle.constant.control.FanDirectionType
 import ai.pleos.playground.vehicle.constant.unit.TemperatureUnit
 import android.os.Handler
 import android.os.Looper
@@ -18,7 +19,9 @@ class SeatPersonalizer(private val sdk: Vehicle, private val vehicleKey: String,
     fun observe(seat: String, result: (JSONObject) -> Unit) {
         val area = try { SeatArea(SeatValue.valueOf(seat)) } catch (_: Exception) { return }
         val out = JSONObject().put("seat", seat)
-        var pending = 3
+        val seatValue = area.values.single()
+        val driver = PleosRuntime.state().optString("vehicleDriverSeat")
+        var pending = 5
         fun done(write: () -> Unit = {}) { ui.post { write(); pending -= 1; if (pending == 0) result(out) } }
         try {
             sdk.getSeat().getHvacSeatTemperature(area = area, onComplete = { v -> done { out.put("heat", v ?: JSONObject.NULL) } }, onFailed = { done() })
@@ -34,6 +37,48 @@ class SeatPersonalizer(private val sdk: Vehicle, private val vehicleKey: String,
                     onComplete = { value -> done { out.put("cabinC", value?.toDouble() ?: JSONObject.NULL) } }, onFailed = { done() })
             }, onFailed = { done() })
         } catch (_: Exception) { done() }
+        // Target temperature and fan direction of the passenger's own climate zone (never a zone shared with the driver).
+        try {
+            sdk.getHVAC().checkHvacTemperatureCapabilities(onComplete = { _, zones ->
+                val zone = zones.keys.firstOrNull { it.values.contains(seatValue) }
+                if (zone == null || zone.values.any { it.name == driver }) done { out.put("sharedZone", zone != null) }
+                else sdk.getHVAC().getHvacTemperature(zone, TemperatureUnit.CELSIUS,
+                    onComplete = { t -> done { out.put("targetTemp", t?.toDouble() ?: JSONObject.NULL) } }, onFailed = { done() })
+            }, onFailed = { done() })
+        } catch (_: Exception) { done() }
+        try {
+            sdk.getHVAC().checkHvacFanDirectionCapabilities(onComplete = { _, zones ->
+                val zone = zones.keys.firstOrNull { it.values.contains(seatValue) }
+                if (zone == null || zone.values.any { it.name == driver }) done { out.put("sharedZone", zone != null) }
+                else sdk.getHVAC().getHvacFanDirection(zone,
+                    onComplete = { f -> done { out.put("fanDirection", f?.name ?: JSONObject.NULL) } }, onFailed = { done() })
+            }, onFailed = { done() })
+        } catch (_: Exception) { done() }
+    }
+    private fun applyClimate(area: SeatArea, profile: JSONObject, allowed: () -> Boolean, report: (String,String) -> Unit) {
+        val seatValue = area.values.single()
+        val driver = PleosRuntime.state().optString("vehicleDriverSeat")
+        val target = profile.optDouble("target_temp", Double.NaN)
+        if (target.isFinite()) try {
+            sdk.getHVAC().checkHvacTemperatureCapabilities(onComplete = { config, zones -> ui.post {
+                val zone = zones.keys.firstOrNull { it.values.contains(seatValue) }
+                val bounds = zone?.let { zones[it] }
+                if (zone == null || bounds == null || !writable(config.accessType) || zone.values.any { it.name == driver }) report("climate","temperature-skipped")
+                else if (target.toFloat() !in bounds.minValue..bounds.maxValue) report("climate","temperature-out-of-range")
+                else if (allowed()) sdk.getHVAC().setHvacTemperature(zone, target.toFloat(), TemperatureUnit.CELSIUS,
+                    onComplete = { _, _ -> report("climate","temperature-applied") }, onFailed = { report("climate","temperature-failed") })
+            } }, onFailed = { report("climate","temperature-unavailable") })
+        } catch (_: Exception) { report("climate","temperature-unavailable") }
+        val fan = FanDirectionType.values().firstOrNull { it.name == profile.optString("fan_direction") && it != FanDirectionType.UNKNOWN }
+        if (fan != null) try {
+            sdk.getHVAC().checkHvacFanDirectionCapabilities(onComplete = { config, zones -> ui.post {
+                val zone = zones.keys.firstOrNull { it.values.contains(seatValue) }
+                val supported = zone?.let { zones[it] }
+                if (zone == null || supported == null || fan !in supported || !writable(config.accessType) || zone.values.any { it.name == driver }) report("climate","fan-skipped")
+                else if (allowed()) sdk.getHVAC().setHvacFanDirection(zone, fan,
+                    onComplete = { _, _ -> report("climate","fan-applied") }, onFailed = { report("climate","fan-failed") })
+            } }, onFailed = { report("climate","fan-unavailable") })
+        } catch (_: Exception) { report("climate","fan-unavailable") }
     }
     fun apply(seat: String, profile: JSONObject, current: () -> Boolean) {
         val area = try { SeatArea(SeatValue.valueOf(seat)) } catch (_: Exception) { return }
@@ -70,6 +115,7 @@ class SeatPersonalizer(private val sdk: Vehicle, private val vehicleKey: String,
                 } }, onFailed = { report("thermal","temperature-unavailable") })
             }, onFailed = { report("thermal","temperature-unavailable") })
         } catch (_: Exception) { report("thermal","unavailable") }
+        applyClimate(area, profile, ::allowed, ::report)
     }
     private fun applyThermal(area: SeatArea, heat: Int, vent: Int, allowed: () -> Boolean, report: (String,String) -> Unit) {
         // Both features must expose this exact single seat. A shared zone must not modify another occupant.

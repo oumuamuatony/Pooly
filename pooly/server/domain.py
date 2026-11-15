@@ -18,6 +18,7 @@ from pathlib import Path
 
 KST = timezone(timedelta(hours=9))
 MAX_MEMBERS = 12
+FAN_DIRECTIONS = {"FACE", "FLOOR", "FACE_AND_FLOOR", "DEFROST", "FACE_AND_DEFROST", "DEFROST_AND_FLOOR", "FACE_AND_FLOOR_AND_DEFROST"}
 DEMO_FRIENDS = ("Max", "Kelly", "Jeff")
 
 
@@ -190,24 +191,35 @@ class Store:
             if data.get("seat") != binding.get("seat"):
                 raise ApiError(409, "승차할 때 연결된 좌석의 변화만 기록할 수 있어요.")
             cabin, heat, vent = data.get("cabin_c"), data.get("heat"), data.get("vent")
+            target, fan = data.get("target_temp"), data.get("fan_direction")
             if type(cabin) not in [int, float] or not math.isfinite(cabin) or not -40 <= cabin <= 60:
                 raise ApiError(400, "실내 온도를 확인해 주세요.")
             for level in (heat, vent):
                 if level is not None and (type(level) is not int or not 0 <= level <= 3):
                     raise ApiError(400, "열선·통풍 단계를 확인해 주세요.")
-            # Same bands as the car app: <= 20 C heat, >= 26 C ventilation, in between nothing to learn.
-            if cabin <= 20 and heat is not None:
-                field, level = "cold_heat", heat
-            elif cabin >= 26 and vent is not None:
-                field, level = "hot_ventilation", vent
-            else:
-                return {"learned": None}
+            if target is not None and (type(target) not in [int, float] or not math.isfinite(target) or not 10 <= target <= 35):
+                raise ApiError(400, "희망 온도를 확인해 주세요.")
+            if fan is not None and fan not in FAN_DIRECTIONS:
+                raise ApiError(400, "바람 방향을 확인해 주세요.")
+            learned = {}
+            # Heat/ventilation follow the same bands as the car app: <= 20 C heat, >= 26 C ventilation.
+            if heat is not None and cabin <= 20:
+                learned["cold_heat"] = heat
+            if vent is not None and cabin >= 26:
+                learned["hot_ventilation"] = vent
+            # The passenger's own climate zone: preferred target temperature and fan direction.
+            if target is not None:
+                learned["target_temp"] = round(float(target), 1)
+            if fan is not None:
+                learned["fan_direction"] = fan
+            if not learned:
+                return {"learned": [], "values": {}}
             profile = self.seat_profile(m["user_id"])
-            updated = {**profile, field: level, "updated_at": now_iso()}
-            if level > 0:
+            updated = {**profile, **learned, "updated_at": now_iso()}
+            if any(k in learned for k in ["target_temp", "fan_direction"]) or learned.get("cold_heat", 0) > 0 or learned.get("hot_ventilation", 0) > 0:
                 updated["enabled"] = True
             self.db.execute("INSERT OR REPLACE INTO seat_profiles VALUES(?,?)", (m["user_id"], json.dumps(updated)))
-            return {"learned": field, "level": level}
+            return {"learned": list(learned), "values": learned}
 
     def _auto_evidence(self, a, current, data, boarding=False):
         if not current or data.get("member_id") != current["id"]:

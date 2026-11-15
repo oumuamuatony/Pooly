@@ -27,7 +27,7 @@ class PickupAutomation(private val base: String, private val token: String, priv
     private val stopRecorder = StopRecorder()
     // In-car seat heat/ventilation changes by a boarded passenger, read every 3 s and learned by the server.
     private val thermalReads = java.util.concurrent.ConcurrentHashMap<String, JSONObject>()
-    private val thermalSeen = mutableMapOf<String, String>()
+    private val thermalSeen = mutableMapOf<String, JSONObject>()
     private var nextThermalRead = 0L
     fun start() {
         PleosRuntime.publish(JSONObject().put("pickupAutomation",true))
@@ -134,22 +134,30 @@ class PickupAutomation(private val base: String, private val token: String, priv
             val id = m.getString("id"); val seat = binding.optString("seat")
             val read = thermalReads.remove(id)
             if (read != null) {
-                val heat = read.opt("heat") as? Int; val vent = read.opt("vent") as? Int
                 val cabin = read.optDouble("cabinC", Double.NaN)
-                val state = "$heat:$vent"
-                val previous = thermalSeen.put(id, state)
+                val previous = thermalSeen.put(id, read)
                 // The first reading is the baseline; changes Pooly itself applied right after boarding are not learned.
-                if (previous != null && previous != state && now - profileRequestedAt > 15000 && cabin.isFinite()) {
-                    try {
-                        val result = request("/api/appointments/$aid/seat-learning","POST",JSONObject().put("member_id",id).put("seat",seat)
-                            .put("cabin_c",cabin).put("heat",heat ?: JSONObject.NULL).put("vent",vent ?: JSONObject.NULL))
-                        val field = result.optString("learned")
-                        if (field == "cold_heat" || field == "hot_ventilation") {
-                            val what = if (field == "cold_heat") "열선" else "통풍"
-                            val level = result.optInt("level")
-                            PleosRuntime.publish(JSONObject().put("seatLearnedNotice",JSONObject().put("key","$aid:$id:$state:$now").put("appointmentId",aid)
+                if (previous != null && now - profileRequestedAt > 15000 && cabin.isFinite()) {
+                    val body = JSONObject().put("member_id",id).put("seat",seat).put("cabin_c",cabin)
+                    // Zone climate is learned only when the passenger's zone is not shared with the driver.
+                    val fields = if (read.optBoolean("sharedZone")) listOf("heat" to "heat", "vent" to "vent")
+                        else listOf("heat" to "heat", "vent" to "vent", "targetTemp" to "target_temp", "fanDirection" to "fan_direction")
+                    var changed = false
+                    for ((key, api) in fields) {
+                        if (read.isNull(key) || previous.isNull(key)) continue
+                        if (read.get(key).toString() != previous.get(key).toString()) { body.put(api, read.get(key)); changed = true }
+                    }
+                    if (changed) try {
+                        val values = request("/api/appointments/$aid/seat-learning","POST",body).optJSONObject("values")
+                        if (values != null && values.length() > 0) {
+                            val parts = mutableListOf<String>()
+                            if (values.has("cold_heat")) parts.add("열선 ${values.getInt("cold_heat")}단계")
+                            if (values.has("hot_ventilation")) parts.add("통풍 ${values.getInt("hot_ventilation")}단계")
+                            if (values.has("target_temp")) parts.add("희망 온도 ${values.getDouble("target_temp")}℃")
+                            if (values.has("fan_direction")) parts.add("바람 " + fanLabel(values.getString("fan_direction")))
+                            PleosRuntime.publish(JSONObject().put("seatLearnedNotice",JSONObject().put("key","$aid:$id:$now").put("appointmentId",aid)
                                 .put("observedAt",now).put("title",m.optString("name")+" 님 좌석 설정 저장")
-                                .put("message","실내 ${Math.round(cabin)}℃에서 $what ${level}단계를 기억했어요")))
+                                .put("message","실내 ${Math.round(cabin)}℃에서 바꾼 설정: " + parts.joinToString(" · "))))
                         }
                     } catch (_: Exception) {}
                 }
@@ -157,6 +165,15 @@ class PickupAutomation(private val base: String, private val token: String, priv
             if (now >= nextThermalRead) vehicle.observeSeat(seat) { thermalReads[id] = it }
         }
         if (now >= nextThermalRead) nextThermalRead = now + 3000
+    }
+    private fun fanLabel(name: String) = when (name) {
+        "FACE" -> "얼굴"
+        "FLOOR" -> "발"
+        "FACE_AND_FLOOR" -> "얼굴·발"
+        "DEFROST" -> "앞유리"
+        "FACE_AND_DEFROST" -> "얼굴·앞유리"
+        "DEFROST_AND_FLOOR" -> "발·앞유리"
+        else -> "전체"
     }
     private fun alight(drop: PickupPolicy.Alight, vehicleKey: String) {
         val evidence = JSONObject().put("parked",true).put("observed_at",drop.observedAt).put("seat",drop.seat)
