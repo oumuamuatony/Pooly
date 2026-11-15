@@ -36,6 +36,26 @@ Pooly는 이 데이터를 수집해 지도에는 없는 픽업을 하기에 좋�
 | ③ | **차량 신호 기반 자동 승하차 확인** | 좌석 점유 변화로 승차·하차를 판정하고 "B 님 탑승 완료 · C 님에게 이동 중" 안내, 경로 자동 갱신 |
 | ④ | **동승자 좌석 사용자화** | 동승자가 차에서 바꾼 열선·통풍·희망 온도·바람 방향을 기억해, 다음 탑승 때 실내 온도에 맞춰 적용 |
 
+## 화면
+
+Pleos Connect 에뮬레이터 2.1.0과 동승자 휴대폰에서 실제로 실행한 화면입니다.
+
+**차량 화면**
+
+| ① 일정 만들기 | ② 여정 확인 |
+|:-:|:-:|
+| <img src="docs/screenshots/car-1-create-schedule.png" alt="차량: 목적지·도착 일정·일행을 골라 일정 만들기"> | <img src="docs/screenshots/car-2-trip-overview.png" alt="차량: 픽업 순서와 예상 도착 시간 확인 후 출발"> |
+| 목적지·도착 시간을 정하고 일행을 눌러 픽업 순서에 추가 | 픽업 순서와 예상 도착을 확인하고 출발 |
+| **③ 첫 픽업 위치로 자동 안내** | **④ 좌석 신호로 탑승 확인** |
+| <img src="docs/screenshots/car-3-to-pickup.png" alt="차량: 내장 내비가 Max 님 픽업 위치로 경로 안내"> | <img src="docs/screenshots/car-4-boarded.png" alt="차량: Max 님 탑승 완료, Kelly 님에게 이동 중"> |
+| 출발하면 내장 내비에 첫 픽업 위치가 바로 설정 | 동승석이 점유되면 "Max 님 탑승 완료"를 띄우고 다음 픽업으로 경로 전환 |
+
+**동승자 휴대폰 (앱 설치 없이 초대 링크)**
+
+| 일정 | 일정 자세히 | 추천 위치 선택 | 차 위치 확인 | 탑승 후 |
+|:-:|:-:|:-:|:-:|:-:|
+| <img src="docs/screenshots/phone-1-schedule.png" width="160" alt="휴대폰: 초대받은 일정"> | <img src="docs/screenshots/phone-2-detail.png" width="160" alt="휴대폰: 픽업 순서와 내 픽업 위치 정하기"> | <img src="docs/screenshots/phone-3-recommend.png" width="160" alt="휴대폰: 지도의 추천 위치에서 픽업 위치 선택"> | <img src="docs/screenshots/phone-4-driver-location.png" width="160" alt="휴대폰: 운전자 위치와 도착 예정 시간"> | <img src="docs/screenshots/phone-5-boarded.png" width="160" alt="휴대폰: 승차 완료, 다음 픽업 장소로 이동 중"> |
+
 ---
 
 ## ① 딥러닝 기반 픽업 위치 추천
@@ -209,6 +229,7 @@ pooly/
   deploy/                       배포 가이드
   scripts/                      배포 ZIP 생성, Virtual Console 열기
   artifacts/gleo-schema.json    Gleo 명령 스키마
+docs/screenshots/               차량·휴대폰 실행 화면
 docs/oem-map-diagnosis.md       알려진 이슈: 에뮬레이터 내장 내비 배경 지도
 ```
 
