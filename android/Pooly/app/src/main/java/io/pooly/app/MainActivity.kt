@@ -100,7 +100,12 @@ class MainActivity : Activity() {
                     "api" -> {
                         val path = payload.getString("path"); val method = payload.optString("method", "GET")
                         if (restricted && (method in setOf("PATCH", "DELETE") || path == "/api/contacts" || path == "/api/appointments" && method == "POST")) throw IllegalStateException("차량을 주차한 뒤 약속을 설정해 주세요.")
-                        io.execute { try { done(PoolyApi.request(apiBase, path, method, payload.optJSONObject("body"), payload.optString("token"))) } catch (_: Exception) { fail("Pooly 서버에 연결하지 못했어요. 인터넷 연결을 확인해 주세요.") } }
+                        io.execute {
+                            try {
+                                val result = PoolyApi.request(apiBase, path, method, payload.optJSONObject("body"), payload.optString("token"))
+                                done(if (isCar && method == "GET") DemoPlaceSearch.fallback(applicationContext, path, result) else result)
+                            } catch (_: Exception) { fail("Pooly 서버에 연결하지 못했어요. 인터넷 연결을 확인해 주세요.") }
+                        }
                     }
                     "session" -> { preferences.edit().putString("token", payload.getString("token")).putString("role", payload.getString("role")).putString("base", apiBase).apply(); done(JSONObject().put("saved", true)) }
                     "restoreSession" -> {
