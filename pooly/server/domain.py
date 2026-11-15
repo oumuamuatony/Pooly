@@ -17,7 +17,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 KST = timezone(timedelta(hours=9))
-MAX_PICKUPS = 2
+MAX_MEMBERS = 12
 DEMO_FRIENDS = ("Max", "Kelly", "Jeff")
 
 
@@ -255,7 +255,7 @@ class Store:
             self.db.execute("INSERT INTO pickup_stops(lat,lon,dwell_s,hour,kind) VALUES(?,?,?,?,?)", (cell(lat), cell(lon), dwell, hour, kind))
             return {"ok": True}
 
-    def pickup_recommendations(self, lat, lon, hour=None, radius=1500, limit=3):
+    def pickup_recommendations(self, lat, lon, hour=None, radius=2500, limit=8):
         """Ranks ~50 m cells near a place by recorded boardings: frequent, short stops close by rank first."""
         if not (math.isfinite(lat) and math.isfinite(lon) and -90 <= lat <= 90 and -180 <= lon <= 180):
             raise ApiError(400, "위치를 확인해 주세요.")
@@ -395,6 +395,13 @@ class Store:
         if a["owner_id"] != uid:
             raise ApiError(403, "약속을 만든 사람만 변경할 수 있어요.")
 
+    def delete(self, uid, aid):
+        with self.lock, self.db:
+            self._owner(self._get(aid), uid)
+            self.db.execute("DELETE FROM notifications WHERE appointment_id=?", (aid,))
+            self.db.execute("DELETE FROM appointments WHERE id=?", (aid,))
+            return {"deleted": True}
+
     def _driver(self, a):
         return next((m for m in [a["owner"]] + a["members"] if m["status"] == "accepted" and m["mode"] == "car"), None)
 
@@ -448,10 +455,6 @@ class Store:
     def _participant(self, cid, name, mode="pickup"):
         return {"id": cid, "name": name, "user_id": None, "mode": mode, "pickup_requested": mode == "pickup", "status": "pending", "ready": "preparing", "origin": None, "pickup": None, "share": False, "location": None, "started_at": None, "arrived_at": None, "home_at": None, "travel_minutes": None}
 
-    def _validate_pickups(self, a):
-        if sum(m["mode"] == "pickup" and m["status"] != "declined" for m in a["members"]) > MAX_PICKUPS:
-            raise ApiError(409, "픽업할 일행은 최대 2명까지 선택할 수 있어요.")
-
     def create(self, user, data):
         with self.lock, self.db:
             aid = secrets.token_hex(12)
@@ -477,8 +480,8 @@ class Store:
             return self._view(a, user["id"])
 
     def _update_members(self, a, requested, uid):
-        if not isinstance(requested, list) or len(requested) > 12:
-            raise ApiError(400, "일행은 최대 12명까지 추가할 수 있어요.")
+        if not isinstance(requested, list) or len(requested) > MAX_MEMBERS:
+            raise ApiError(400, f"일행은 최대 {MAX_MEMBERS}명까지 추가할 수 있어요.")
         members, seen = [], set()
         old = {m["id"]: m for m in a["members"]}
         demo_contacts = {c["id"]: c for c in self._demo_contacts()} if self.demo_owner and uid == self.demo_owner else {}
@@ -510,7 +513,6 @@ class Store:
             if m["id"] not in seen:
                 self._notify(a, "약속 참가 변경", a["name"] + "의 참가자에서 제외되었어요.", [m.get("user_id")])
         a["members"] = members
-        self._validate_pickups(a)
 
     def update(self, uid, aid, data):
         with self.lock, self.db:
@@ -576,7 +578,6 @@ class Store:
             m.update(user_id=user["id"], status=status)
             if status == "accepted":
                 self._member_changes(m, data)
-                self._validate_pickups(a)
                 self.db.execute("UPDATE contacts SET user_id=? WHERE id=? AND owner_id=?", (user["id"], m["id"], a["owner_id"]))
             self._save(a)
             self._notify(a, "초대 " + ("거절" if status == "declined" else "수락"), m["name"] + "님이 " + a["name"] + " 초대에 응답했어요.", [a["owner_id"]])
@@ -628,7 +629,6 @@ class Store:
             if m.get("boarded_at") and "pickup" in data:
                 raise ApiError(409, "이미 탑승한 픽업의 장소는 바꿀 수 없어요.")
             self._member_changes(m, data)
-            self._validate_pickups(a)
             action = data.get("action")
             if action == "depart":
                 m["started_at"] = m.get("started_at") or now_iso()
@@ -687,7 +687,7 @@ class Store:
         if navigation.get("status") != "guiding" or data.get("session_id") != navigation.get("session_id"):
             return False
         entries = data.get("stops")
-        if not isinstance(entries, dict) or len(entries) > MAX_PICKUPS + 1:
+        if not isinstance(entries, dict) or len(entries) > MAX_MEMBERS + 1:
             raise ApiError(400, "내비 도착 시간을 확인해 주세요.")
         final_id = "lot" if a.get("parking") else "dest"
         allowed = {final_id, *trip.get("active_pickups", [])[trip["index"]:]}
@@ -764,7 +764,6 @@ class Store:
                 t.setdefault("alighted", []).append(member["id"])
                 self._notify(a, "하차 완료", member["name"] + "님이 하차했어요.", exclude=uid)
             elif action == "depart":
-                self._validate_pickups(a)
                 if t["phase"] != "idle":
                     raise ApiError(409, "이미 출발한 이동이에요.")
                 if any(not m.get("pickup") for m in eligible):

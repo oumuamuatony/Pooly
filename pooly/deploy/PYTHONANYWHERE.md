@@ -67,7 +67,7 @@ from pooly.server.wsgi import application        # 이전: from together.server.
 | `POST /api/sessions` | 기기 프로필과 Bearer 토큰 생성 |
 | `GET /api/state` | 내 약속·친구·알림 |
 | `POST /api/contacts` | 친구 추가 |
-| `POST /api/appointments` | 약속 생성 (픽업 대상 최대 2명) |
+| `POST /api/appointments` | 약속 생성 (일행 최대 12명) |
 | `PATCH /api/appointments/<id>` | 약속 수정 |
 | `GET /api/invites/<token>` · `POST /api/invites/<token>/join` | 초대 확인 · 참가 |
 | `POST /api/appointments/<id>/member` | 내 픽업 위치·준비 상태·위치 공유 동의 |
@@ -78,7 +78,7 @@ from pooly.server.wsgi import application        # 이전: from together.server.
 | `POST /api/appointments/<id>/messages` | 일행 메시지 |
 | `GET /api/places?q=...` | 장소 검색 프록시 |
 | `POST /api/appointments/<id>/stops` | 운전자 차량의 정차 기록(약 50m 칸 위치·정차 시간·시간대·승차/하차) 저장. 10분 초과 정차는 거부 |
-| `GET /api/pickup-recommendations?lat=&lon=&hour=` | 반경 1.5km 안에서 승차 기록 5건 이상인 칸 중 상위 3곳 |
+| `GET /api/pickup-recommendations?lat=&lon=&hour=` | 반경 1.5km 안에서 승차 기록 5건 이상인 칸 중 상위 8곳 |
 
 `auto_board`·`auto_alight`는 운전자 권한, 현재 대상, 신호 시각(15초 이내), 좌석·차량 키 일치, 관찰 ID 중복을 서버에서 다시 검증합니다. 같은 관찰 ID를 다시 보내면 상태를 바꾸지 않고 현재 상태를 돌려줍니다.
 

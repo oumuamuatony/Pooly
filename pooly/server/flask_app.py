@@ -11,7 +11,7 @@ from flask import Flask, g, jsonify, redirect, render_template, request, send_fr
 from werkzeug.exceptions import HTTPException
 from werkzeug.security import check_password_hash
 
-from .domain import ApiError, MAX_PICKUPS, Store
+from .domain import ApiError, MAX_MEMBERS, Store
 from .places import PlaceSearch
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -96,7 +96,7 @@ def create_app(config=None):
 
     @app.get("/health")
     def health():
-        return jsonify(ok=True, service="pooly", framework="flask", version="1.0.0", max_pickups=MAX_PICKUPS)
+        return jsonify(ok=True, service="pooly", framework="flask", version="1.0.0", max_pickups=MAX_MEMBERS)
 
     @app.get("/database")
     def database_view():
@@ -113,7 +113,7 @@ def create_app(config=None):
         totals, appointments = store().database_overview()
         return render_template("database.html", totals=totals, appointments=appointments)
 
-    @app.route("/api/<path:path>", methods=["GET", "POST", "PATCH"])
+    @app.route("/api/<path:path>", methods=["GET", "POST", "PATCH", "DELETE"])
     def api(path):
         try:
             if (demo_owner or origin) and path.startswith("invites/"):
@@ -170,6 +170,8 @@ def create_app(config=None):
             match = re.fullmatch(r"appointments/([a-f0-9]{24})(?:/(route|actions|member|location|messages|seat-personalization|demo-position|stops))?", path)
             if match:
                 aid, action = match.groups()
+                if request.method == "DELETE" and action is None:
+                    return jsonify(db.delete(uid, aid))
                 public_trip = public_demo_owner and db._access(aid, uid)["owner_id"] == public_demo_owner
                 if request.method == "POST" and action == "demo-position":
                     if not public_trip or uid != public_demo_owner:

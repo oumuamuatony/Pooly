@@ -83,7 +83,7 @@
  function metres(a,b){const k=Math.PI/180,dl=(b.lat-a.lat)*k,dn=(b.lon-a.lon)*k,x=Math.sin(dl/2)**2+Math.cos(a.lat*k)*Math.cos(b.lat*k)*Math.sin(dn/2)**2;return 2*6371000*Math.asin(Math.sqrt(Math.min(1,x)));}
  // Prototype ranking on the synthetic stop counts: frequent stops close to the requested place rank first.
  // The planned road-graph model (GNN) replaces this score once real stop data is collected.
- function recommend(center,limit=3,radius=1500,period='all'){
+ function recommend(center,limit=8,radius=2500,period='all'){
   if(!center||!Number.isFinite(center.lat)||!Number.isFinite(center.lon))return [];
   return rows(period).map(p=>({...p,distance:metres(center,p)})).filter(p=>p.distance<=radius)
    .map(p=>({...p,score:p.count/(1+p.distance/500)})).sort((a,b)=>b.score-a.score).slice(0,limit)
@@ -97,14 +97,14 @@
    map.__poolyRecommend=spots.map(p=>{
     const label=recorded?'승차 기록 '+p.count+'건 · 평균 정차 '+p.avg_dwell_s+'초':p.name;
     const button=document.createElement('button');
-    button.type='button';button.className='recommend-pin'+(recorded?' recorded':'');button.textContent=String(p.rank);
+    button.type='button';button.className='recommend-label';button.textContent='추천 위치';
     button.title=label;
     button.setAttribute('aria-label','추천 픽업 위치 '+p.rank+' · '+label+(recorded?'':' · 예시 데이터'));
     button.onclick=e=>{e.stopPropagation();onPick({id:'recommend-'+p.rank,name:'추천 '+p.rank+' · '+label,address:recorded?'실제 승차 기록 기반 추천':'예시 정차 데이터 기반 추천',lat:p.lat,lon:p.lon});};
-    return new maplibregl.Marker({element:button,anchor:'center'}).setLngLat([p.lon,p.lat]).addTo(map);
+    return new maplibregl.Marker({element:button,anchor:'bottom',offset:[0,-4]}).setLngLat([p.lon,p.lat]).addTo(map);
    });
    const n=note();
-   if(n)n.innerHTML=recorded?'번호 핀(1~3)은 <b>실제 승차 기록</b>으로 계산한 추천 픽업 위치예요. 기록이 5건 이상 쌓인 곳만 보여요.':'번호 핀(1~3)은 가상 정차 데이터로 계산한 <b>추천 픽업 위치 예시</b>예요. 실제 승차 기록이 쌓이면 바뀌어요.';
+   if(n)n.textContent=recorded?'추천 위치는 실제 승차 기록이 5건 이상 쌓인 곳이에요.':'추천 위치는 예시 정차 데이터로 표시돼요.';
   };
   draw(recommend(center),false);
   if(!loadRecorded)return map.__poolyRecommend.length;

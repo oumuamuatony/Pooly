@@ -29,6 +29,19 @@ class FlaskWorkflowTests(unittest.TestCase):
     def tearDown(self):
         self.temp.cleanup()
 
+    def test_only_owner_can_delete_an_appointment_for_all_participants(self):
+        client = create_app({**self.config, "DEMO_OWNER": self.driver["user"]["id"]}).test_client()
+        rider = client.post("/api/demo/session", json={"contact_id": self.contacts[0]["id"]}).get_json()
+        rider_auth = {"Authorization": "Bearer " + rider["token"]}
+        path = "/api/appointments/" + self.a["id"]
+        self.assertEqual(1, len(client.get("/api/state", headers=rider_auth).get_json()["appointments"]))
+        self.assertEqual(401, client.delete(path).status_code)
+        self.assertEqual(403, client.delete(path, headers=rider_auth).status_code)
+        self.assertEqual({"deleted": True}, client.delete(path, headers=self.auth).get_json())
+        for auth in (self.auth, rider_auth):
+            self.assertEqual([], client.get("/api/state", headers=auth).get_json()["appointments"])
+        self.assertEqual(404, client.get(path + "/route", headers=self.auth).status_code)
+
     def test_local_demo_links_saved_friends_without_invites(self):
         app = create_app({**self.config, "DEMO_OWNER": self.driver["user"]["id"]})
         client = app.test_client()
@@ -147,14 +160,16 @@ class FlaskWorkflowTests(unittest.TestCase):
         self.assertEqual(200, response.status_code)
         return auth, response.get_json()
 
-    def test_pickup_limit_create_and_patch_are_atomic(self):
-        invalid = {**self.payload, "members": [{"id": c["id"], "mode": "pickup"} for c in self.contacts]}
-        self.assertEqual(409, self.client.post("/api/appointments", json=invalid, headers=self.auth).status_code)
-        response = self.client.patch("/api/appointments/" + self.a["id"], json={"revision": self.a["revision"], "members": invalid["members"]}, headers=self.auth)
-        self.assertEqual(409, response.status_code)
-        appointments = self.client.get("/api/state", headers=self.auth).get_json()["appointments"]
-        self.assertEqual(1, len(appointments))
-        self.assertEqual(2, len(appointments[0]["pickup_order"]))
+    def test_three_pickups_can_be_created_and_reordered(self):
+        members = [{"id": c["id"], "mode": "pickup"} for c in self.contacts]
+        response = self.client.post("/api/appointments", json={**self.payload, "members": members}, headers=self.auth)
+        self.assertEqual(201, response.status_code)
+        order = [member["id"] for member in reversed(members)]
+        response = self.client.patch("/api/appointments/" + self.a["id"],
+                                     json={"revision": self.a["revision"], "members": members, "pickup_order": order},
+                                     headers=self.auth)
+        self.assertEqual(200, response.status_code)
+        self.assertEqual(order, response.get_json()["pickup_order"])
 
     def test_binary_driving_selection_and_recipient_owned_location(self):
         auth, joined = self.rider()
@@ -171,7 +186,7 @@ class FlaskWorkflowTests(unittest.TestCase):
         self.assertEqual("walk", direct["members"][2]["mode"])
         self.assertEqual(403, self.client.post(path, json={"mode": "pickup", "pickup": PLACES[2]}, headers=auth2).status_code)
 
-    def test_returning_to_pickup_cannot_overfill(self):
+    def test_only_assigned_rider_can_select_pickup(self):
         auth, joined = self.rider(drives=True)
         changed = self.client.patch("/api/appointments/" + self.a["id"], json={"revision": joined["revision"], "members": [{"id": self.contacts[0]["id"], "mode": "car"}, {"id": self.contacts[1]["id"], "mode": "pickup"}, {"id": self.contacts[2]["id"], "mode": "pickup"}]}, headers=self.auth)
         self.assertEqual(200, changed.status_code)
