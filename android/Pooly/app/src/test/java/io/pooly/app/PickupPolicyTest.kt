@@ -75,9 +75,9 @@ class PickupPolicyTest {
         assertEquals(2 to 0,PickupPolicy.thermal(p,10.0));assertEquals(0 to 1,PickupPolicy.thermal(p,30.0));assertEquals(0 to 0,PickupPolicy.thermal(p,23.0))
         assertNull(PickupPolicy.thermal(p,null));assertNull(PickupPolicy.thermal(p,Double.NaN));p.put("enabled",false);assertNull(PickupPolicy.thermal(p,10.0))
     }
-    @Test fun heatStopsAtTwentyDegrees() {
+    @Test fun heatStopsAboveTwentyDegrees() {
         val p=JSONObject("""{"enabled":true,"cold_heat":2,"hot_ventilation":1}""")
-        assertEquals(2 to 0,PickupPolicy.thermal(p,19.9));assertEquals(0 to 0,PickupPolicy.thermal(p,20.0));assertEquals(0 to 1,PickupPolicy.thermal(p,26.0))
+        assertEquals(2 to 0,PickupPolicy.thermal(p,20.0));assertEquals(0 to 0,PickupPolicy.thermal(p,20.1));assertEquals(0 to 1,PickupPolicy.thermal(p,26.0))
     }
     private fun boarded(phase: String = "destination") = JSONObject("""{"id":"trip","is_driver":true,"trip":{"phase":"$phase","index":1,"active_pickups":["max"]},"members":[{"id":"max","name":"Max","status":"accepted","boarded_at":"2026-11-14T10:00:00Z","seat_binding":{"seat":"ROW_1_RIGHT","vehicle_key":"car","occupied_at":${t+500}}}]}""")
     private fun vacated(now: Long, changedAt: Long = t+10000) = JSONObject("""{"vehicleMotion":{"parked":true,"speedMps":0,"updatedAt":$now},"vehicleSeatMonitoring":"connected","vehicleSeats":{"ROW_1_RIGHT":{"occupied":false,"previous":true,"changedAt":$changedAt,"updatedAt":$now}}}""")

@@ -97,8 +97,8 @@ class PickupPolicy {
         /** Cabin °C, not last trip's switch setting or the requested HVAC target temperature. */
         fun thermal(profile: JSONObject, cabinC: Double?): Pair<Int, Int>? {
             if (!profile.optBoolean("enabled") || cabinC == null || !cabinC.isFinite() || cabinC !in -40.0..85.0) return null
-            // Below 20 ℃ the saved heat level applies; from 20 ℃ it stays off (26 ℃ and above: ventilation).
-            return when { cabinC < 20 -> profile.optInt("cold_heat",1).coerceIn(0,3) to 0
+            // At or below 20 ℃ the saved heat level applies; above 20 ℃ it stays off (26 ℃ and above: ventilation).
+            return when { cabinC <= 20 -> profile.optInt("cold_heat",1).coerceIn(0,3) to 0
                 cabinC >= 26 -> 0 to profile.optInt("hot_ventilation",1).coerceIn(0,3)
                 else -> 0 to 0 }
         }
