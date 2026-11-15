@@ -25,6 +25,10 @@ class PickupAutomation(private val base: String, private val token: String, priv
     private val handled = mutableSetOf<String>()
     private val alightFailures = mutableMapOf<String, Int>()
     private val stopRecorder = StopRecorder()
+    // In-car seat heat/ventilation changes by a boarded passenger, read every 3 s and learned by the server.
+    private val thermalReads = java.util.concurrent.ConcurrentHashMap<String, JSONObject>()
+    private val thermalSeen = mutableMapOf<String, String>()
+    private var nextThermalRead = 0L
     fun start() {
         PleosRuntime.publish(JSONObject().put("pickupAutomation",true))
         worker.scheduleWithFixedDelay({ if (!closed) try { tick() } catch (error: Exception) {
@@ -57,6 +61,7 @@ class PickupAutomation(private val base: String, private val token: String, priv
             // Best-effort: a failed upload never blocks pickup automation.
             try { request("/api/appointments/$aid/stops","POST",stop.json()) } catch (_: Exception) {}
         }
+        learnSeatChanges(a, System.currentTimeMillis())
         // Recover a committed receipt after a lost HTTP response or Activity/process recreation.
         val members = a.getJSONArray("members")
         val boundKey = PleosRuntime.vehicle?.vehicleKey
@@ -117,6 +122,41 @@ class PickupAutomation(private val base: String, private val token: String, priv
         PleosRuntime.publish(JSONObject().put("pickupBoardingNotice",JSONObject().put("key",receipt).put("appointmentId",aid).put("observedAt",match.observedAt)
             .put("title",m.getString("name")+" 님 탑승 완료").put("message",next?.let { it.getString("name")+" 님에게 이동 중" } ?: ("목적지로 이동 중 · "+result.getJSONObject("destination").getString("name")))))
         pendingRoute = result; routeAttempts = 0
+    }
+    private fun learnSeatChanges(a: JSONObject, now: Long) {
+        val vehicle = PleosRuntime.vehicle ?: return
+        val members = a.optJSONArray("members") ?: return
+        for (i in 0 until members.length()) {
+            val m = members.getJSONObject(i)
+            if (m.isNull("boarded_at") || !m.isNull("alighted_at")) continue
+            val binding = m.optJSONObject("seat_binding") ?: continue
+            if (binding.optString("vehicle_key") != vehicle.vehicleKey) continue
+            val id = m.getString("id"); val seat = binding.optString("seat")
+            val read = thermalReads.remove(id)
+            if (read != null) {
+                val heat = read.opt("heat") as? Int; val vent = read.opt("vent") as? Int
+                val cabin = read.optDouble("cabinC", Double.NaN)
+                val state = "$heat:$vent"
+                val previous = thermalSeen.put(id, state)
+                // The first reading is the baseline; changes Pooly itself applied right after boarding are not learned.
+                if (previous != null && previous != state && now - profileRequestedAt > 15000 && cabin.isFinite()) {
+                    try {
+                        val result = request("/api/appointments/$aid/seat-learning","POST",JSONObject().put("member_id",id).put("seat",seat)
+                            .put("cabin_c",cabin).put("heat",heat ?: JSONObject.NULL).put("vent",vent ?: JSONObject.NULL))
+                        val field = result.optString("learned")
+                        if (field == "cold_heat" || field == "hot_ventilation") {
+                            val what = if (field == "cold_heat") "열선" else "통풍"
+                            val level = result.optInt("level")
+                            PleosRuntime.publish(JSONObject().put("seatLearnedNotice",JSONObject().put("key","$aid:$id:$state:$now").put("appointmentId",aid)
+                                .put("observedAt",now).put("title",m.optString("name")+" 님 좌석 설정 저장")
+                                .put("message","실내 ${Math.round(cabin)}℃에서 $what ${level}단계를 기억했어요")))
+                        }
+                    } catch (_: Exception) {}
+                }
+            }
+            if (now >= nextThermalRead) vehicle.observeSeat(seat) { thermalReads[id] = it }
+        }
+        if (now >= nextThermalRead) nextThermalRead = now + 3000
     }
     private fun alight(drop: PickupPolicy.Alight, vehicleKey: String) {
         val evidence = JSONObject().put("parked",true).put("observed_at",drop.observedAt).put("seat",drop.seat)

@@ -39,6 +39,7 @@ class PleosVehicle(context: Context, private val event: (JSONObject) -> Unit) {
     }
     private val personalizer = SeatPersonalizer(sdk, vehicleKey, event)
     fun personalize(seat: String, profile: JSONObject, current: () -> Boolean) = personalizer.apply(seat, profile, current)
+    fun observeSeat(seat: String, result: (JSONObject) -> Unit) = personalizer.observe(seat, result)
 
     // This verified emulator exposes VACANT=1, OCCUPIED=2 while SDK 2.3.2 maps
     // only integer 1 to true. Do not apply this compatibility rule to real cars

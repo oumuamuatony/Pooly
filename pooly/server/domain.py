@@ -176,6 +176,39 @@ class Store:
                 raise ApiError(409, "좌석 승차가 확인된 일행의 설정만 적용할 수 있어요.")
             return {"profile": self.seat_profile(m["user_id"]), "binding": m["seat_binding"]}
 
+    def seat_learning(self, uid, aid, data):
+        """Learns a passenger's heat/ventilation level from a change made in the car, by cabin temperature band."""
+        with self.lock, self.db:
+            a = self._access(aid, uid)
+            driver = self._driver(a)
+            if not driver or driver.get("user_id") != uid or a["trip"]["phase"] in ["idle", "finished", "cancelled"]:
+                raise ApiError(403, "현재 이동의 운전자 차량만 좌석 사용 기록을 보낼 수 있어요.")
+            m = next((m for m in a["members"] if m["id"] == data.get("member_id")), None)
+            binding = (m or {}).get("seat_binding") or {}
+            if not m or not m.get("boarded_at") or m.get("alighted_at") or not binding or not m.get("user_id"):
+                raise ApiError(409, "좌석 승차가 확인된 일행만 기록할 수 있어요.")
+            if data.get("seat") != binding.get("seat"):
+                raise ApiError(409, "승차할 때 연결된 좌석의 변화만 기록할 수 있어요.")
+            cabin, heat, vent = data.get("cabin_c"), data.get("heat"), data.get("vent")
+            if type(cabin) not in [int, float] or not math.isfinite(cabin) or not -40 <= cabin <= 60:
+                raise ApiError(400, "실내 온도를 확인해 주세요.")
+            for level in (heat, vent):
+                if level is not None and (type(level) is not int or not 0 <= level <= 3):
+                    raise ApiError(400, "열선·통풍 단계를 확인해 주세요.")
+            # Same bands as the car app: <= 20 C heat, >= 26 C ventilation, in between nothing to learn.
+            if cabin <= 20 and heat is not None:
+                field, level = "cold_heat", heat
+            elif cabin >= 26 and vent is not None:
+                field, level = "hot_ventilation", vent
+            else:
+                return {"learned": None}
+            profile = self.seat_profile(m["user_id"])
+            updated = {**profile, field: level, "updated_at": now_iso()}
+            if level > 0:
+                updated["enabled"] = True
+            self.db.execute("INSERT OR REPLACE INTO seat_profiles VALUES(?,?)", (m["user_id"], json.dumps(updated)))
+            return {"learned": field, "level": level}
+
     def _auto_evidence(self, a, current, data, boarding=False):
         if not current or data.get("member_id") != current["id"]:
             raise ApiError(409, "현재 픽업 대상이 바뀌었어요.")
@@ -626,8 +659,8 @@ class Store:
                     raise ApiError(409, "종료된 이동의 위치 공유는 다시 시작할 수 없어요.")
             if a["trip"]["phase"] != "idle" and any(k in data for k in ["mode", "drives", "origin"]):
                 raise ApiError(409, "출발한 이동의 이동 방법과 출발지는 바꿀 수 없어요.")
-            if m.get("boarded_at") and "pickup" in data:
-                raise ApiError(409, "이미 탑승한 픽업의 장소는 바꿀 수 없어요.")
+            if a["trip"]["phase"] != "idle" and "pickup" in data:
+                raise ApiError(409, "출발한 뒤에는 픽업 위치를 바꿀 수 없어요. 운전자에게 메시지를 보내 주세요.")
             self._member_changes(m, data)
             action = data.get("action")
             if action == "depart":

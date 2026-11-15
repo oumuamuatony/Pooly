@@ -70,9 +70,10 @@ from pooly.server.wsgi import application        # 이전: from together.server.
 | `POST /api/appointments` | 약속 생성 (일행 최대 12명) |
 | `PATCH /api/appointments/<id>` | 약속 수정 |
 | `GET /api/invites/<token>` · `POST /api/invites/<token>/join` | 초대 확인 · 참가 |
-| `POST /api/appointments/<id>/member` | 내 픽업 위치·준비 상태·위치 공유 동의 |
+| `POST /api/appointments/<id>/member` | 내 픽업 위치·준비 상태·위치 공유 동의 (픽업 위치는 출발 전까지만 변경) |
 | `POST /api/appointments/<id>/actions` | 운전자 동작: `depart` `arrive` `board` `skip` `park` `finish` `cancel`, 차량 신호 기반 `auto_arrive` `auto_board` `auto_alight` `auto_finish`, 내비 동기화 `navigation_status` `navigation_eta` |
 | `POST /api/appointments/<id>/seat-personalization` | 승차가 확인된 일행의 좌석 설정 조회(운전자 전용) |
+| `POST /api/appointments/<id>/seat-learning` | 탑승한 일행이 차에서 바꾼 열선·통풍 단계를 실내 온도 구간과 함께 저장(운전자 차량 전용) |
 | `GET/POST /api/seat-profile` | 내 좌석 설정(열선·통풍 단계, 차량별 메모리 슬롯) |
 | `POST /api/appointments/<id>/location` | 동의한 이동의 위치 갱신 |
 | `POST /api/appointments/<id>/messages` | 일행 메시지 |

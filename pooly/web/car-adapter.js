@@ -94,7 +94,7 @@
     self._noticePanelOpen=d.navigationPanel==='moving';
     if(wasOpen&&!self._noticePanelOpen)self.setState({guidanceNotice:null});
    }
-   ['pickupBoardingNotice','pickupAlightNotice'].forEach(function(key){
+   ['pickupBoardingNotice','pickupAlightNotice','seatLearnedNotice'].forEach(function(key){
     var n=d[key];
     if(!n||!n.key||self._vehicleNotices[n.key]||!T.app.appointments.some(function(a){return a.id===n.appointmentId;}))return;
     if(!(Date.now()-n.observedAt>=-5000&&Date.now()-n.observedAt<60000))return;

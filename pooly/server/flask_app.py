@@ -167,7 +167,7 @@ def create_app(config=None):
             match = re.fullmatch(r"invites/([A-Za-z0-9_.-]{1,600})/join", path)
             if request.method == "POST" and match:
                 return jsonify(db.join(user, match[1], data))
-            match = re.fullmatch(r"appointments/([a-f0-9]{24})(?:/(route|actions|member|location|messages|seat-personalization|demo-position|stops))?", path)
+            match = re.fullmatch(r"appointments/([a-f0-9]{24})(?:/(route|actions|member|location|messages|seat-personalization|seat-learning|demo-position|stops))?", path)
             if match:
                 aid, action = match.groups()
                 if request.method == "DELETE" and action is None:
@@ -185,9 +185,9 @@ def create_app(config=None):
                     return jsonify(route)
                 if request.method == "PATCH" and action is None:
                     return jsonify(db.update(uid, aid, data))
-                handlers = {"actions": db.action, "member": db.member_update, "location": db.location, "messages": db.message, "seat-personalization": db.seat_personalization, "stops": db.record_stop}
+                handlers = {"actions": db.action, "member": db.member_update, "location": db.location, "messages": db.message, "seat-personalization": db.seat_personalization, "seat-learning": db.seat_learning, "stops": db.record_stop}
                 if request.method == "POST" and action in handlers:
-                    if public_trip and action in {"location", "seat-personalization", "stops"}:
+                    if public_trip and action in {"location", "seat-personalization", "seat-learning", "stops"}:
                         raise ApiError(403, "공개 시연에서는 사용할 수 없어요.")
                     if public_trip and action == "member" and "share" in data:
                         data["share"] = False

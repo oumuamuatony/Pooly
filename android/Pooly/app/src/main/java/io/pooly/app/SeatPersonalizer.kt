@@ -14,6 +14,27 @@ class SeatPersonalizer(private val sdk: Vehicle, private val vehicleKey: String,
     private val ui = Handler(Looper.getMainLooper())
     private fun writable(access: AccessType) = access in setOf(AccessType.WRITE, AccessType.READ_WRITE)
     private fun readable(access: AccessType) = access in setOf(AccessType.READ, AccessType.READ_WRITE)
+    /** Reads the seat's heat/ventilation levels and the cabin temperature, to learn changes made in the car. */
+    fun observe(seat: String, result: (JSONObject) -> Unit) {
+        val area = try { SeatArea(SeatValue.valueOf(seat)) } catch (_: Exception) { return }
+        val out = JSONObject().put("seat", seat)
+        var pending = 3
+        fun done(write: () -> Unit = {}) { ui.post { write(); pending -= 1; if (pending == 0) result(out) } }
+        try {
+            sdk.getSeat().getHvacSeatTemperature(area = area, onComplete = { v -> done { out.put("heat", v ?: JSONObject.NULL) } }, onFailed = { done() })
+        } catch (_: Exception) { done() }
+        try {
+            sdk.getSeat().getHvacSeatVentilationState(area = area, onComplete = { v -> done { out.put("vent", v ?: JSONObject.NULL) } }, onFailed = { done() })
+        } catch (_: Exception) { done() }
+        try {
+            sdk.getHVAC().checkHvacTemperatureCurrentCapabilities(onComplete = { config, areas ->
+                val readArea = areas.firstOrNull { it.values.contains(area.values.single()) }
+                if (!readable(config.accessType) || readArea == null) done()
+                else sdk.getHVAC().getHvacTemperatureCurrent(readArea, TemperatureUnit.CELSIUS,
+                    onComplete = { value -> done { out.put("cabinC", value?.toDouble() ?: JSONObject.NULL) } }, onFailed = { done() })
+            }, onFailed = { done() })
+        } catch (_: Exception) { done() }
+    }
     fun apply(seat: String, profile: JSONObject, current: () -> Boolean) {
         val area = try { SeatArea(SeatValue.valueOf(seat)) } catch (_: Exception) { return }
         fun allowed(): Boolean {

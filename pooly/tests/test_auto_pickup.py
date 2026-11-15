@@ -37,6 +37,37 @@ class AutoPickupTests(unittest.TestCase):
         self.assertEqual(409,self.act('auto_board',self.event(1)).status_code)
         final=self.act('auto_board',e2);self.assertEqual(200,final.status_code);self.assertEqual('destination',final.get_json()['trip']['phase'])
 
+    def test_pickup_cannot_change_after_departure(self):
+        self.rider_auth, _ = self.rider(0)
+        path='/api/appointments/'+self.a['id']
+        spot={'name':'새 위치','lat':37.546,'lon':127.057}
+        self.assertEqual(200,self.client.post(path+'/member',json={'pickup':spot},headers=self.rider_auth).status_code)
+        self.assertEqual(200,self.client.post(path+'/actions',json={'action':'depart'},headers=self.auth).status_code)
+        moved=self.client.post(path+'/member',json={'pickup':{**spot,'lat':37.547}},headers=self.rider_auth)
+        self.assertEqual(409,moved.status_code)
+        self.assertEqual(200,self.client.post(path+'/member',json={'ready':'ready'},headers=self.rider_auth).status_code)
+
+    def learn(self, **body):
+        data={'member_id':self.contacts[0]['id'],'seat':'ROW_1_RIGHT','cabin_c':18.0,'heat':2,'vent':0}
+        data.update(body)
+        return self.client.post(self.path+'/seat-learning',json=data,headers=body.pop('auth',None) or self.auth)
+
+    def test_seat_heat_turned_on_in_car_is_learned_by_temperature_band(self):
+        self.prepare()
+        self.assertEqual(409,self.learn().status_code)               # not boarded yet
+        self.assertEqual(200,self.act('auto_board',self.event()).status_code)
+        self.assertEqual(409,self.learn(seat='ROW_2_RIGHT').status_code)
+        self.assertEqual(400,self.learn(heat=4).status_code)
+        self.assertEqual(403,self.client.post(self.path+'/seat-learning',json={'member_id':self.contacts[0]['id'],'seat':'ROW_1_RIGHT','cabin_c':18.0,'heat':2},headers=self.rider_auth).status_code)
+        self.assertEqual({'learned':None},self.learn(cabin_c=22.0).get_json())   # between 20 and 26 C: nothing to learn
+        self.assertEqual({'learned':'cold_heat','level':2},self.learn().get_json())
+        self.assertEqual({'learned':'hot_ventilation','level':1},self.learn(cabin_c=27.0,heat=0,vent=1).get_json())
+        profile=self.client.get('/api/seat-profile',headers=self.rider_auth).get_json()
+        self.assertEqual((True,2,1),(profile['enabled'],profile['cold_heat'],profile['hot_ventilation']))
+        # The next driver lookup returns the learned profile.
+        looked=self.client.post(self.path+'/seat-personalization',json={'member_id':self.contacts[0]['id']},headers=self.auth).get_json()
+        self.assertEqual(2,looked['profile']['cold_heat'])
+
     def alight_event(self, index=0, seat='ROW_1_RIGHT'):
         now = time.time()*1000
         return {'member_id':self.contacts[index]['id'], 'observation_id':f'alight-{index}-{seat}', 'evidence':{
